@@ -1,0 +1,31 @@
+version: '2.0'
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: bot_Dockerfile
+    depends_on:
+      - "db"
+    environment:
+      - TZ=Europe/Moscow
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - BOT_TOKEN=${BOT_TOKEN}
+    restart: always
+  db:
+    image: mysql
+    command: mysqld --character-set-server=utf8 --collation-server=utf8_unicode_ci --init-connect='SET NAMES UTF8;'
+    volumes:
+      - ${DB_DATA_PATH}:/var/lib/mysql
+    environment:
+      - TZ=Europe/Moscow
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASS}
+      - MYSQL_ROOT_PASSWORD=${DB_PASS}
+    ports:
+        - "3306:3306"
+    restart: always

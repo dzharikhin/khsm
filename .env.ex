@@ -1,0 +1,5 @@
+DB_NAME=khsm
+DB_USER=khsm
+DB_PASS=
+DB_DATA_PATH=./db_data
+BOT_TOKEN=
