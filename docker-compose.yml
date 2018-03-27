@@ -29,3 +29,18 @@ services:
     ports:
         - "3306:3306"
     restart: always
+  flusher:
+    build:
+      context: .
+      dockerfile: flush_Dockerfile
+    depends_on:
+      - "db"
+    environment:
+      - TZ=Europe/Moscow
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - BOT_TOKEN=${BOT_TOKEN}
+    restart: always

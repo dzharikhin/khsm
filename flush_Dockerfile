@@ -1,0 +1,4 @@
+FROM python:3.4-alpine
+ADD . /
+RUN pip install -r requirements.txt && pip install tzlocal==1.5.1 --upgrade && pip install APScheduler==3.5.1 --upgrade
+CMD ["python", "flush_data.py"]
