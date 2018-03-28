@@ -19,10 +19,11 @@ BOT_LOSE_TEXT = 'bot_lose_text'
 BOT_ALREADY_ANSWERED_TEXT = 'bot_already_answered_question_text'
 BOT_SKIP_REPLY = 'bot_skip_reply'
 
+
 def start_handler(bot, update):
     player = update.message.from_user
     player_id = str(player.id)
-    is_new_user = service.add_player(player_id, PLAYER_TYPE, player.username, datetime.datetime.now())
+    is_new_user = service.add_player(player_id, PLAYER_TYPE, player.username, update.message.chat_id, datetime.datetime.now())
     if is_new_user:
         greeting = service.get_property(BOT_GREETING_TEXT, 'Добро пожаловать в игру')
         _reply_to_player(update.message, greeting)

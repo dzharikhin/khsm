@@ -1,9 +1,10 @@
 # coding=utf-8
 import os
-from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime, UniqueConstraint, and_, desc
+from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime, UniqueConstraint, and_, or_, desc
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql.functions import count, max
 
 import loggers
 
@@ -32,20 +33,21 @@ def with_session():
 
 
 @with_session()
-def add_player(session, player_id, player_type, player_name, registration_time):
+def add_player(session, player_id, player_type, player_name, chat_id, registration_time):
     """
     adds new player
     :param session: autoprovided via with_session
     :param player_id:
     :param player_name:
     :param player_type:
+    :param chat_id:
     :param registration_time:
     :return: False if player already exists, True - otherwise
     """
     existing_player = session.query(Player).filter(Player.player_id == player_id).first()
     if existing_player:
         return False
-    player = Player(player_id, player_type, player_name, registration_time)
+    player = Player(player_id, player_type, player_name, chat_id, registration_time)
     session.add(player)
     return True
 
@@ -121,6 +123,9 @@ class Question(_Base):
     text_value = Column(String(1000), nullable=False)
     weight = Column(Integer, nullable=False)
 
+    # relations inited later
+    variants = None
+
 
 class Variant(_Base):
     __tablename__ = 'variant'
@@ -137,14 +142,17 @@ class Player(_Base):
     __tablename__ = 'player'
     player_id = Column(String(100), primary_key=True, nullable=False)
     player_type = Column(String(3), primary_key=True, nullable=False)
+
     player_name = Column(String(100))
+    chat_id = Column(Integer)
 
     registration_time = Column(DateTime, nullable=False)
 
-    def __init__(self, player_id, player_type, player_name, registration_time):
+    def __init__(self, player_id, player_type, player_name, chat_id, registration_time):
         self.player_id = player_id
         self.player_type = player_type
         self.player_name = player_name
+        self.chat_id = chat_id
         self.registration_time = registration_time
 
 
@@ -161,6 +169,10 @@ class Answer(_Base):
         self.question_id = question_id
         self.variant_id = variant_id
         self.answer_time = answer_time
+
+    # relations inited later
+    question = None
+    variant = None
 
 
 class Property(_Base):
