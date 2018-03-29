@@ -17,6 +17,9 @@ BOT_WIN_TEXT = 'bot_win_text'
 BOT_FINAL_TEXT = 'bot_final_text'
 BOT_LOSE_TEXT = 'bot_lose_text'
 BOT_ALREADY_ANSWERED_TEXT = 'bot_already_answered_question_text'
+BOT_PLACE_TEXT = 'bot_place_text'
+BOT_HELP_TEXT = 'bot_help_text'
+
 BOT_SKIP_REPLY = 'bot_skip_reply'
 
 
@@ -48,10 +51,9 @@ def _process_question(bot, latest_answer, message):
 
 
 def button_handler(bot, callback_update):
-    player_id = str(callback_update.effective_user.id)
-    current_stage = service.get_property('bot_stage', '1')
-    latest_answer = service.get_last_answer(player_id, current_stage)
-    current_question = service.get_next_unanswered_question(latest_answer)
+    user = callback_update.effective_user
+    player_id = str(user.id)
+    latest_answer, current_question = _get_state(player_id)
     if current_question:
         variant_id = callback_update.callback_query.data
         latest_answer = service.add_answer(player_id, current_question.question_id, variant_id, datetime.datetime.now())
@@ -62,24 +64,46 @@ def button_handler(bot, callback_update):
         _process_question(bot, latest_answer, callback_update.effective_message)
 
 
+def _get_state(player_id):
+    current_stage = service.get_property(BOT_STAGE, '1')
+    latest_answer = service.get_last_answer(player_id, current_stage)
+    current_question = service.get_next_unanswered_question(latest_answer)
+    return latest_answer, current_question
+
+
 def hint_handler(bot, update):
-    _reply_to_player(update.message, 'Скоро здесь будет функция 50/50')
+    user = update.message.from_user
+    player_id = str(user.id)
+    latest_answer, current_question = _get_state(player_id)
+    if not current_question:
+        _reply_to_player(update.message, service.get_property(BOT_WIN_TEXT, 'Поздравляем, Ваш успешно ответили на все вопросы'))
+    grouped, total = service.get_answer_stats(current_question.question_id)
+    text = '\n'.join(['{} - {}%'.format(variant[0], variant[1] / float(total) * 100 if total else 0) for variant in grouped])
+    _reply_to_player(update.message, text)
 
 
 def my_place_handler(bot, update):
-    _reply_to_player(update.message, 'Скоро здесь будет функция отображения места пользователя в общем зачете')
+    current_stage = service.get_property(BOT_STAGE, '1')
+    user = update.message.from_user
+    player_id = str(user.id)
+
+    place = service.get_player_place(current_stage, player_id)
+    if not place:
+        _reply_to_player(update.message, service.get_property(BOT_GREETING_TEXT, 'Добро пожаловать в игру'))
+    else:
+        template = service.get_property(BOT_PLACE_TEXT, 'Сейчас вы на {} месте')
+        _reply_to_player(update.message, template.format(place))
 
 
 def top_handler(bot, update):
-    _reply_to_player(update.message, 'Скоро здесь будет функция показать топ')
-
-
-def stats_handler(bot, update):
-    _reply_to_player(update.message, 'Скоро здесь будет функция статистики верных ответов. Только не в процентах, а то читы')
+    current_stage = service.get_property(BOT_STAGE, '1')
+    top, question_amount = service.get_top(current_stage, 10)
+    text = '\n'.join(['{}. {}{}'.format(i + 1, player[0], "(*)" if player[1] == question_amount else "") for i, player in enumerate(top)])
+    _reply_to_player(update.message, text)
 
 
 def help_handler(bot, update):
-    help_text = service.get_property('bot_help', 'Шлите /start или любое другое сообщение, чтобы начать')
+    help_text = service.get_property(BOT_HELP_TEXT, 'Шлите /start или любое другое сообщение, чтобы начать')
     _reply_to_player(update.message, help_text)
 
 
@@ -115,7 +139,6 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('hint', hint_handler))
     updater.dispatcher.add_handler(CommandHandler('myplace', my_place_handler))
     updater.dispatcher.add_handler(CommandHandler('top', top_handler))
-    updater.dispatcher.add_handler(CommandHandler('stats', stats_handler))
     updater.dispatcher.add_handler(CallbackQueryHandler(button_handler))
     updater.dispatcher.add_handler(MessageHandler(Filters.all, start_handler))
     updater.dispatcher.add_error_handler(error)

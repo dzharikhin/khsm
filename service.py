@@ -4,7 +4,7 @@ from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime, U
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.sql.functions import count, max
+from sqlalchemy.sql.functions import count, max, coalesce
 
 import loggers
 
@@ -99,20 +99,48 @@ def reset_data(session):
     session.query(Player).delete()
 
 
+@with_session()
 def get_answer_stats(session, question_id):
-    pass
+    total = session.query(count('*')).select_from(Answer).filter(Answer.question_id == question_id).scalar()
+    grouped_answers_query = session.query(Answer.variant_id, count('*').label('cnt')).group_by(Answer.variant_id)\
+        .filter(Answer.question_id == question_id).subquery()
+    grouped_answers = session.query(Variant.variant_id, coalesce(grouped_answers_query.c.cnt, 0))\
+        .outerjoin(grouped_answers_query, grouped_answers_query.c.variant_id == Variant.variant_id)\
+        .filter(Variant.question_id == question_id).all()
+    return grouped_answers, total
 
 
+@with_session()
 def get_player_place(session, stage, player_id):
-    pass
+    rating_query = _get_rating(session, stage)
+    all_rating = rating_query.subquery()
+    user_score = rating_query.filter(Answer.player_id == player_id).first()
+    if not user_score:
+        return None
+    return session.query(count(all_rating.c.player_id) + 1).select_from(all_rating)\
+        .filter(or_(all_rating.c.points > user_score[1], and_(all_rating.c.points == user_score[1],
+                                                              all_rating.c.last_answer_time < user_score[2]))).scalar()
 
 
+@with_session()
 def get_top(session, stage, top_size):
-    pass
+    question_amount = session.query(count(Question.question_id)).filter(Question.stage == stage).scalar()
+    entities = _get_rating(session, stage).limit(top_size).from_self().join(Player).with_entities(Player.player_name, 'points')
+    top = entities.all()
+    return top, question_amount
 
 
-def get_right_answer_amount_for_questions(stage):
-    pass
+@with_session()
+def get_answer(session, player_id, question_id):
+    return session.query(Answer).filter(and_(Answer.player_id == player_id, Answer.question_id == question_id)).first()
+
+
+def _get_rating(session, stage):
+    return session.query(Answer.player_id, count(Answer.variant_id).label('points'), max(Answer.answer_time).label('last_answer_time')) \
+        .join(Answer.question).join(Answer.variant) \
+        .filter(and_(Variant.correct == True, Question.stage == stage)) \
+        .group_by(Answer.player_id) \
+        .order_by(desc('points'), 'last_answer_time')
 
 
 class Question(_Base):
