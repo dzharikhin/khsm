@@ -122,7 +122,7 @@ def my_place_handler(bot, update):
     current_stage = service.get_property(BOT_STAGE, '1')
     place = service.get_player_place(current_stage, str(user.id))
     if not place:
-        _reply_to_player(update.message, service.get_property(BOT_GREETING_TEXT, 'Добро пожаловать в игру'))
+        start_handler(bot, update)
     else:
         template = service.get_property(BOT_PLACE_TEXT, 'Сейчас вы на {} месте')
         _reply_to_player(update.message, template.format(place))
@@ -135,7 +135,7 @@ def top_handler(bot, update):
     if text:
         _reply_to_player(update.message, text)
     else:
-        _reply_to_player(update.message, service.get_property(BOT_GREETING_TEXT, 'Добро пожаловать в игру'))
+        start_handler(bot, update)
 
 
 def contact_handler(bot, update):

@@ -109,7 +109,7 @@ def get_player_place(session, stage, player_id):
     user_score = rating_query.filter(Answer.player_id == player_id).first()
     if not user_score:
         return None
-    return session.query(count(all_rating.c.player_id) + 1).select_from(all_rating)\
+    return session.query(count('*') + 1).select_from(all_rating)\
         .filter(or_(all_rating.c.points > user_score[1], and_(all_rating.c.points == user_score[1],
                                                               all_rating.c.last_answer_time < user_score[2]))).scalar()
 
@@ -128,36 +128,26 @@ def get_answer(session, player_id, question_id):
 
 
 @with_session()
+def get_question(session, question_id):
+    return session.query(Question).filter(Question.question_id == question_id).first()
+
+
+@with_session()
 def process_answer(session, stage, player, variant_id, answer_time, try_limit):
     answer = _get_last_answer(session, player.player_id, stage)
     next_question = _get_next_unanswered_question(session, answer)
-    if not next_question:
-        return _set_user_state(session, player, 'WIN'), None
-    answer = _add_answer(session, player, next_question.question_id, variant_id, answer_time)
-    if answer.tries > try_limit:
-        return _set_user_state(session, player, 'LOSE'), None
-    elif answer.tries == try_limit:
-        state = 'PLAY' if answer.variant.correct else 'LOSE'
-        session.flush()
-        return _set_user_state(session, player, state), _get_next_unanswered_question(session, answer)
-    else:
-        state = 'PLAY' if answer.variant.correct else 'REPEAT'
-        session.flush()
-        return _set_user_state(session, player, state), _get_next_unanswered_question(session, answer)
+    if next_question:
+        answer = _add_answer(session, player, next_question.question_id, variant_id, answer_time)
+    state = _calculate_state(next_question, answer, try_limit)
+    session.flush()
+    return _set_user_state(session, player, state), _get_next_unanswered_question(session, answer)
 
 
 @with_session()
 def get_game_state(session, stage, player, try_limit):
     answer = _get_last_answer(session, player.player_id, stage)
     next_question = _get_next_unanswered_question(session, answer)
-    if not next_question:
-        return 'WIN'
-    if not answer:
-        return 'INIT'
-    if answer.tries > try_limit:
-        return 'LOSE'
-    else:
-        return 'PLAY' if answer.variant.correct else 'REPEAT'
+    return _calculate_state(next_question, answer, try_limit)
 
 
 @with_session()
@@ -172,6 +162,19 @@ def save_player_contacts(session, player, text, state=None):
         player.state = state
     session.merge(player)
     return player
+
+
+def _calculate_state(question, answer, try_limit):
+    if not question:
+        return 'WIN'
+    if not answer:
+        return 'INIT'
+    if answer.tries > try_limit:
+        return 'LOSE'
+    elif answer.tries == try_limit:
+        return 'PLAY' if answer.variant.correct else 'LOSE'
+    else:
+        return 'PLAY' if answer.variant.correct else 'REPEAT'
 
 
 def _add_answer(session, player, question_id, variant_id, answer_time):
