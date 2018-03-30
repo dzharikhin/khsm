@@ -136,6 +136,10 @@ def process_answer(session, stage, player, variant_id, answer_time, try_limit):
     answer = _add_answer(session, player, next_question.question_id, variant_id, answer_time)
     if answer.tries > try_limit:
         return _set_user_state(session, player, 'LOSE'), None
+    elif answer.tries == try_limit:
+        state = 'PLAY' if answer.variant.correct else 'LOSE'
+        session.flush()
+        return _set_user_state(session, player, state), _get_next_unanswered_question(session, answer)
     else:
         state = 'PLAY' if answer.variant.correct else 'REPEAT'
         session.flush()
