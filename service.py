@@ -4,7 +4,7 @@ from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime, U
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.sql.functions import count, max, coalesce
+from sqlalchemy.sql.functions import count, max, coalesce, sum
 
 import loggers
 
@@ -33,7 +33,7 @@ def with_session():
 
 
 @with_session()
-def add_player(session, player_id, player_type, player_name, chat_id, registration_time):
+def add_player(session, player_id, player_type, player_name, chat_id, initial_state, registration_time):
     """
     adds new player
     :param session: autoprovided via with_session
@@ -41,34 +41,35 @@ def add_player(session, player_id, player_type, player_name, chat_id, registrati
     :param player_name:
     :param player_type:
     :param chat_id:
+    :param initial_state:
     :param registration_time:
-    :return: False if player already exists, True - otherwise
+    :return: new or existing player
     """
     existing_player = session.query(Player).filter(Player.player_id == player_id).first()
     if existing_player:
-        return False
-    player = Player(player_id, player_type, player_name, chat_id, registration_time)
+        return existing_player
+
+    player = Player(player_id, player_type, player_name, chat_id, initial_state, registration_time)
     session.add(player)
-    return True
+    return player
 
 
 @with_session()
-def add_answer(session, player_id, question_id, variant_id, answer_time):
+def add_hint(session, player_id, question_id, hint_title):
     """
-    adds player answer
-    :param session: autoprovided via with_session
+    adds hint usage
+    :param session:
     :param player_id:
     :param question_id:
-    :param variant_id:
-    :param answer_time:
-    :return: None if player already answered the question, Answer - otherwise
+    :param hint_title:
+    :return: True if already used, False - otherwise
     """
-    existing_answer = session.query(Answer).filter(and_(Answer.player_id == player_id, Answer.question_id == question_id)).first()
-    if existing_answer:
-        return None
-    answer = Answer(player_id, question_id, variant_id, answer_time)
-    session.add(answer)
-    return answer
+    used_hint = session.query(Hint).filter(and_(Hint.player_id == player_id, Hint.hint_title == hint_title)).first()
+    if used_hint:
+        return True
+    new_hint = Hint(player_id, question_id, hint_title)
+    session.add(new_hint)
+    return False
 
 
 @with_session()
@@ -78,24 +79,15 @@ def get_property(session, property_key, default_value):
 
 
 @with_session()
-def get_last_answer(session, player_id, stage):
-    return session.query(Answer).join(Question).filter(and_(Answer.player_id == player_id, Question.stage == stage))\
-        .order_by(desc(Question.weight)).first()
-
-
-@with_session()
-def get_next_unanswered_question(session, answer=None):
-    if not answer:
-        return session.query(Question).order_by(Question.weight).first()
-    if not answer.variant.correct:
-        return answer.question
-    return session.query(Question).filter(and_(Question.stage == answer.question.stage, Question.weight > answer.question.weight))\
-        .order_by(Question.weight).first()
+def get_current_ctx(session, player_id, stage):
+    answer = _get_last_answer(session, player_id, stage)
+    return session.query(Player).filter(Player.player_id == player_id).one(), _get_next_unanswered_question(session, answer)
 
 
 @with_session()
 def reset_data(session):
     session.query(Answer).delete()
+    session.query(Hint).delete()
     session.query(Player).delete()
 
 
@@ -135,12 +127,100 @@ def get_answer(session, player_id, question_id):
     return session.query(Answer).filter(and_(Answer.player_id == player_id, Answer.question_id == question_id)).first()
 
 
+@with_session()
+def process_answer(session, stage, player, variant_id, answer_time, try_limit):
+    answer = _get_last_answer(session, player.player_id, stage)
+    next_question = _get_next_unanswered_question(session, answer)
+    if not next_question:
+        return _set_user_state(session, player, 'WIN'), None
+    answer = _add_answer(session, player, next_question.question_id, variant_id, answer_time)
+    if answer.tries > try_limit:
+        return _set_user_state(session, player, 'LOSE'), None
+    else:
+        state = 'PLAY' if answer.variant.correct else 'REPEAT'
+        session.flush()
+        return _set_user_state(session, player, state), _get_next_unanswered_question(session, answer)
+
+
+@with_session()
+def get_game_state(session, stage, player, try_limit):
+    answer = _get_last_answer(session, player.player_id, stage)
+    next_question = _get_next_unanswered_question(session, answer)
+    if not next_question:
+        return 'WIN'
+    if not answer:
+        return 'INIT'
+    if answer.tries > try_limit:
+        return 'LOSE'
+    else:
+        return 'PLAY' if answer.variant.correct else 'REPEAT'
+
+
+@with_session()
+def set_player_state(session, player, state):
+    return _set_user_state(session, player, state)
+
+
+@with_session()
+def save_player_contacts(session, player, text, state=None):
+    player.contacts = text
+    if state:
+        player.state = state
+    session.merge(player)
+    return player
+
+
+def _add_answer(session, player, question_id, variant_id, answer_time):
+    existing_answer = session.query(Answer).filter(and_(Answer.player_id == player.player_id, Answer.question_id == question_id)).first()
+    if existing_answer:
+        session.begin_nested()
+        existing_answer.tries += 1
+        existing_answer.variant_id = variant_id
+        existing_answer.answer_time = answer_time
+        session.commit()
+        session.refresh(existing_answer)
+        return existing_answer
+
+    answer = Answer(player.player_id, question_id, variant_id, answer_time, 1)
+    session.begin_nested()
+    session.add(answer)
+    session.commit()
+    return answer
+
+
+def _get_last_answer(session, player_id, stage):
+    return session.query(Answer).join(Question).filter(and_(Answer.player_id == player_id, Question.stage == stage)) \
+        .order_by(desc(Question.weight)).first()
+
+
+def _get_next_unanswered_question(session, answer=None):
+    if not answer:
+        return session.query(Question).order_by(Question.weight).first()
+    if not answer.variant.correct:
+        return answer.question
+    return session.query(Question).filter(and_(Question.stage == answer.question.stage, Question.weight > answer.question.weight)) \
+        .order_by(Question.weight).first()
+
+
+def _set_user_state(session, player, state):
+    player.state = state
+    session.merge(player)
+    return player
+
+
 def _get_rating(session, stage):
-    return session.query(Answer.player_id, count(Answer.variant_id).label('points'), max(Answer.answer_time).label('last_answer_time')) \
+    hint_usage_query = session.query(Hint.player_id, count(Hint.question_id).label('hint_count')).group_by(Hint.player_id).subquery()
+    return session.query(Answer.player_id,
+                         count(Answer.variant_id).label('points'),
+                         max(Answer.answer_time).label('last_answer_time'),
+                         sum(Answer.tries).label('sum_tries')) \
         .join(Answer.question).join(Answer.variant) \
         .filter(and_(Variant.correct == True, Question.stage == stage)) \
         .group_by(Answer.player_id) \
-        .order_by(desc('points'), 'last_answer_time')
+        .from_self()\
+        .outerjoin(hint_usage_query, hint_usage_query.c.player_id == Answer.player_id)\
+        .with_entities(Answer.player_id, 'points', 'sum_tries', 'hint_count', 'last_answer_time') \
+        .order_by(desc('points'), 'sum_tries', coalesce(hint_usage_query.c.hint_count, 0), 'last_answer_time')
 
 
 class Question(_Base):
@@ -173,14 +253,17 @@ class Player(_Base):
 
     player_name = Column(String(100))
     chat_id = Column(Integer)
+    state = Column(String(20), nullable=False)
 
     registration_time = Column(DateTime, nullable=False)
+    contacts = Column(String(300))
 
-    def __init__(self, player_id, player_type, player_name, chat_id, registration_time):
+    def __init__(self, player_id, player_type, player_name, chat_id, state, registration_time):
         self.player_id = player_id
         self.player_type = player_type
         self.player_name = player_name
         self.chat_id = chat_id
+        self.state = state
         self.registration_time = registration_time
 
 
@@ -190,17 +273,33 @@ class Answer(_Base):
     question_id = Column(Integer, ForeignKey(Question.question_id), primary_key=True, nullable=False)
 
     variant_id = Column(String(1), ForeignKey(Variant.variant_id), nullable=False)
+    tries = Column(Integer, nullable=False)
     answer_time = Column(DateTime, nullable=False)
 
-    def __init__(self, player_id, question_id, variant_id, answer_time):
+    def __init__(self, player_id, question_id, variant_id, answer_time, tries):
         self.player_id = player_id
         self.question_id = question_id
         self.variant_id = variant_id
         self.answer_time = answer_time
+        self.tries = tries
 
     # relations inited later
     question = None
     variant = None
+
+
+class Hint(_Base):
+    __tablename__ = 'hint'
+    player_id = Column(String(100), ForeignKey(Player.player_id), primary_key=True, nullable=False)
+    question_id = Column(Integer, ForeignKey(Question.question_id), primary_key=True, nullable=False)
+    hint_title = Column(String(10), primary_key=True, nullable=False)
+
+    def __init__(self, player_id, question_id, hint_title):
+        self.player_id = player_id
+        self.question_id = question_id
+        self.hint_title = hint_title
+
+    # __table_args__ = (UniqueConstraint(player_id, question_id, hint_title, name='stupid_index_to_allow_foreign_key_to_variant_id'),)
 
 
 class Property(_Base):

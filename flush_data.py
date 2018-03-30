@@ -17,6 +17,6 @@ def task():
 
 if __name__ == "__main__":
     sched = BlockingScheduler(timezone=get_localzone())
-    sched.add_job(task, CronTrigger.from_crontab('*/5 * * * *'))
+    sched.add_job(task, CronTrigger.from_crontab('*/30 * * * *'))
     sched.start()
 
