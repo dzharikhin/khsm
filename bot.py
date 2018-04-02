@@ -86,6 +86,9 @@ def public_help_handler(bot, update):
     user = update.message.from_user
     current_stage = service.get_property(BOT_STAGE, '1')
     player, question = service.get_current_ctx(str(user.id), current_stage)
+    if not player:
+        start_handler(bot, update)
+        return
     if player.state in ['PLAY', 'REPEAT']:
         already_used_hint = service.add_hint(player.player_id, question.question_id, 'ZAL_HELP')
         if already_used_hint:
@@ -103,6 +106,9 @@ def fifty_handler(bot, update):
     user = update.message.from_user
     current_stage = service.get_property(BOT_STAGE, '1')
     player, question = service.get_current_ctx(str(user.id), current_stage)
+    if not player:
+        start_handler(bot, update)
+        return
     if player.state in ['PLAY', 'REPEAT']:
         already_used_hint = service.add_hint(player.player_id, question.question_id, 'FIFTY')
         if already_used_hint:

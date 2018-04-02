@@ -81,7 +81,7 @@ def get_property(session, property_key, default_value):
 @with_session()
 def get_current_ctx(session, player_id, stage):
     answer = _get_last_answer(session, player_id, stage)
-    return session.query(Player).filter(Player.player_id == player_id).one(), _get_next_unanswered_question(session, answer)
+    return session.query(Player).filter(Player.player_id == player_id).first(), _get_next_unanswered_question(session, answer)
 
 
 @with_session()
