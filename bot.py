@@ -48,7 +48,9 @@ def handle_reply(message, player, question):
             state = service.get_game_state(current_stage, player, try_limit)
             player = service.save_player_contacts(player, '\n'.join([part for part in [player.contacts, message.text] if part is not None]), state)
     if player.state == 'INIT':
-        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, 'Добро пожаловать в игру'))
+        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, 'Добро пожаловать в игру! Помните про 2 подсказки: '
+                                                                          '/fiftyfifty '
+                                                                          'и /jpoint-help'))
         player = service.set_player_state(player, 'PLAY')
     if player.state == 'REPEAT':
         _reply_to_player(message, text=service.get_property(BOT_REPEAT_TEXT, 'Вы ошиблись, но можете попробовать еще раз'), force_reply=True)
@@ -68,7 +70,7 @@ def handle_reply(message, player, question):
             player = service.set_player_state(player, 'CONTACT')
     if player.state == 'CONTACT':
             _reply_to_player(message, service.get_property(BOT_CONTACT_REQUIRE_TEXT, 'Оставьте нам контактную информацию - телефон, email '
-                                                                                     'и как к вам можно обращаться'))
+                                                                                     'и как к Вам можно обращаться'))
             player = service.set_player_state(player, 'CONTACT_REQUEST')
 
 
@@ -130,14 +132,15 @@ def my_place_handler(bot, update):
     if not place:
         start_handler(bot, update)
     else:
-        template = service.get_property(BOT_PLACE_TEXT, 'Сейчас вы на {} месте')
+        template = service.get_property(BOT_PLACE_TEXT, 'Сейчас Вы на {} месте')
         _reply_to_player(update.message, template.format(place))
 
 
 def top_handler(bot, update):
     current_stage = service.get_property(BOT_STAGE, '1')
     top, question_amount = service.get_top(current_stage, 10)
-    text = '\n'.join(['{}. {}{}'.format(i + 1, player[0], "(*)" if player[1] == question_amount else "") for i, player in enumerate(top)])
+    text = '\n'.join(['{}. {} - {}{}'.format(i + 1, player[0], player[1], '(*)' if player[1] == question_amount else '')
+                      for i, player in enumerate(top)])
     if text:
         _reply_to_player(update.message, text)
     else:
