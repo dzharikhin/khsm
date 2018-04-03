@@ -15,6 +15,7 @@ services:
       - DB_PASS=${DB_PASS}
       - BOT_TOKEN=${BOT_TOKEN}
       - CONSOLE_PORT=${CONSOLE_PORT}
+      - WORKERS=${WORKERS}
     ports:
       - ${CONSOLE_PORT}:${CONSOLE_PORT}
     restart: always

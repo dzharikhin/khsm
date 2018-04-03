@@ -186,7 +186,7 @@ def get_bot():
 
 def main():
     global updater
-    updater = Updater(os.environ['BOT_TOKEN'])
+    updater = Updater(os.environ['BOT_TOKEN'], workers=int(os.environ['WORKERS']))
     updater.dispatcher.add_handler(CommandHandler('help', help_handler))
     updater.dispatcher.add_handler(CommandHandler('start', start_handler))
     updater.dispatcher.add_handler(CommandHandler('jpoint_help', public_help_handler))
