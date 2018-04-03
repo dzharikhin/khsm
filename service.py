@@ -92,6 +92,18 @@ def reset_data(session):
 
 
 @with_session()
+def release_losers(session, stage, callback):
+    losers = session.query(Player).filter(Player.state == 'LOSE').all()
+    for loser in losers:
+        session.begin_nested()
+        answer = _get_last_answer(session, loser.player_id, stage)
+        answer.tries = 1
+        loser.state = 'REPEAT'
+        session.commit()
+        callback(loser)
+
+
+@with_session()
 def get_answer_stats(session, question_id):
     total = session.query(count('*')).select_from(Answer).filter(Answer.question_id == question_id).scalar()
     grouped_answers_query = session.query(Answer.variant_id, count('*').label('cnt')).group_by(Answer.variant_id)\
@@ -115,9 +127,13 @@ def get_player_place(session, stage, player_id):
 
 
 @with_session()
-def get_top(session, stage, top_size):
+def get_top(session, stage, top_size=None):
     question_amount = session.query(count(Question.question_id)).filter(Question.stage == stage).scalar()
-    entities = _get_rating(session, stage).limit(top_size).from_self().join(Player).with_entities(Player.player_name, 'points')
+    entities = _get_rating(session, stage)
+    if top_size:
+        entities = entities.limit(top_size)
+    entities = entities.from_self().join(Player).with_entities(Player.player_name, 'points', 'sum_tries',
+                                                               coalesce(Column('hint_count'), 0), 'last_answer_time', Player.chat_id)
     top = entities.all()
     return top, question_amount
 
@@ -162,6 +178,11 @@ def save_player_contacts(session, player, text, state=None):
         player.state = state
     session.merge(player)
     return player
+
+
+@with_session()
+def get_players(sesion):
+    return sesion.query(Player).all()
 
 
 def _calculate_state(question, answer, try_limit):

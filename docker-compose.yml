@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: bot_Dockerfile
     depends_on:
-      - "db"
+      - db
     environment:
       - TZ=Europe/Moscow
       - DB_HOST=db
@@ -14,6 +14,9 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - BOT_TOKEN=${BOT_TOKEN}
+      - CONSOLE_PORT=${CONSOLE_PORT}
+    ports:
+      - ${CONSOLE_PORT}:${CONSOLE_PORT}
     restart: always
   db:
     image: mysql
@@ -27,14 +30,14 @@ services:
       - MYSQL_PASSWORD=${DB_PASS}
       - MYSQL_ROOT_PASSWORD=${DB_PASS}
     ports:
-        - "3306:3306"
+      - 3306:3306
     restart: always
   flusher:
     build:
       context: .
       dockerfile: flush_Dockerfile
     depends_on:
-      - "db"
+      - db
     environment:
       - TZ=Europe/Moscow
       - DB_HOST=db

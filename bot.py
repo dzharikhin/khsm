@@ -180,9 +180,13 @@ def _build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
     return menu
 
 
-def main():
-    updater = Updater(os.environ['BOT_TOKEN'])
+def get_bot():
+    return updater.bot
 
+
+def main():
+    global updater
+    updater = Updater(os.environ['BOT_TOKEN'])
     updater.dispatcher.add_handler(CommandHandler('help', help_handler))
     updater.dispatcher.add_handler(CommandHandler('start', start_handler))
     updater.dispatcher.add_handler(CommandHandler('jpoint_help', public_help_handler))
