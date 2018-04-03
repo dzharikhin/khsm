@@ -133,7 +133,8 @@ def get_top(session, stage, top_size=None):
     if top_size:
         entities = entities.limit(top_size)
     entities = entities.from_self().join(Player).with_entities(Player.player_name, 'points', 'sum_tries',
-                                                               coalesce(Column('hint_count'), 0), 'last_answer_time', Player.chat_id)
+                                                               coalesce(Column('hint_count'), 0), 'last_answer_time', Player.chat_id)\
+        .order_by(desc('points'), 'sum_tries', coalesce(Column('hint_count'), 0), 'last_answer_time')
     top = entities.all()
     return top, question_amount
 
