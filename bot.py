@@ -4,6 +4,7 @@ import datetime
 import os
 import random
 
+import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
 
@@ -130,24 +131,19 @@ def fifty_handler(bot, update):
         handle_reply(update.message, player, question)
 
 
-def my_place_handler(bot, update):
+def top_handler(bot, update):
     user = update.message.from_user
     current_stage = service.get_property(BOT_STAGE, '1')
-    place = service.get_player_place(current_stage, str(user.id))
-    if not place:
-        start_handler(bot, update)
-    else:
-        template = service.get_property(BOT_PLACE_TEXT, 'Сейчас Вы на {} месте')
-        _reply_to_player(update.message, template.format(place))
-
-
-def top_handler(bot, update):
-    current_stage = service.get_property(BOT_STAGE, '1')
     top, question_amount = service.get_top(current_stage, 10)
-    text = '\n'.join(['{}. {} - {}{}'.format(i + 1, player[0], player[1], '(*)' if player[1] == question_amount else '')
-                      for i, player in enumerate(top)])
-    if text:
-        _reply_to_player(update.message, text)
+    if top:
+        text = '\n'.join(['{}. {} - {}'.format(i + 1, '*{}*'.format(player[0]) if player[6] == str(user.id) else player[0], player[1])
+                          for i, player in enumerate(top)])
+        if not next((player for player in top if player[6] == str(user.id)), None):
+            player_score, player_place = service.get_player_place(current_stage, str(user.id))
+            if player_score:
+                text = '\n'.join([text, '...', '{}. *{}* - {}'.format(player_place, user.username, player_score[1])])
+
+        _reply_to_player(update.message, text, parse_mode=telegram.ParseMode.MARKDOWN)
     else:
         start_handler(bot, update)
 
@@ -205,7 +201,6 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('start', start_handler))
     updater.dispatcher.add_handler(CommandHandler('jpoint_help', public_help_handler))
     updater.dispatcher.add_handler(CommandHandler('fiftyfifty', fifty_handler))
-    updater.dispatcher.add_handler(CommandHandler('myplace', my_place_handler))
     updater.dispatcher.add_handler(CommandHandler('top', top_handler))
     updater.dispatcher.add_handler(CommandHandler('contacts', contact_handler))
     updater.dispatcher.add_handler(CallbackQueryHandler(button_handler))
