@@ -81,7 +81,7 @@ def get_property(session, property_key, default_value):
 @with_session()
 def get_current_ctx(session, player_id, stage):
     answer = _get_last_answer(session, player_id, stage)
-    return session.query(Player).filter(Player.player_id == player_id).first(), _get_next_unanswered_question(session, answer)
+    return session.query(Player).filter(Player.player_id == player_id).first(), _get_next_unanswered_question(session, stage, answer)
 
 
 @with_session()
@@ -165,18 +165,18 @@ def get_question(session, question_id):
 @with_session()
 def process_answer(session, stage, player, variant_id, answer_time, try_limit):
     answer = _get_last_answer(session, player.player_id, stage)
-    next_question = _get_next_unanswered_question(session, answer)
+    next_question = _get_next_unanswered_question(session, stage, answer)
     if next_question:
         answer = _add_answer(session, player, next_question.question_id, variant_id, answer_time)
     state = _calculate_state(next_question, answer, try_limit)
     session.flush()
-    return _set_user_state(session, player, state), _get_next_unanswered_question(session, answer)
+    return _set_user_state(session, player, state), _get_next_unanswered_question(session, stage, answer)
 
 
 @with_session()
 def get_game_state(session, stage, player, try_limit):
     answer = _get_last_answer(session, player.player_id, stage)
-    next_question = _get_next_unanswered_question(session, answer)
+    next_question = _get_next_unanswered_question(session, stage, answer)
     return _calculate_state(next_question, answer, try_limit)
 
 
@@ -235,12 +235,12 @@ def _get_last_answer(session, player_id, stage):
         .order_by(desc(Question.weight)).first()
 
 
-def _get_next_unanswered_question(session, answer=None):
+def _get_next_unanswered_question(session, stage, answer=None):
     if not answer:
-        return session.query(Question).order_by(Question.weight).first()
+        return session.query(Question).filter(Question.stage == stage).order_by(Question.weight).first()
     if not answer.variant.correct:
         return answer.question
-    return session.query(Question).filter(and_(Question.stage == answer.question.stage, Question.weight > answer.question.weight)) \
+    return session.query(Question).filter(and_(Question.stage == stage, Question.weight > answer.question.weight)) \
         .order_by(Question.weight).first()
 
 
