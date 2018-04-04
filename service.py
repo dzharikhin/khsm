@@ -104,6 +104,14 @@ def release_losers(session, stage, callback):
 
 
 @with_session()
+def set_property(session, property_key, property_value):
+    property = Property(property_key, property_value)
+    session.add(property)
+    session.query(Player).update({Player.state: 'PLAY'})
+    session.commit()
+
+
+@with_session()
 def get_answer_stats(session, question_id):
     total = session.query(count('*')).select_from(Answer).filter(Answer.question_id == question_id).scalar()
     grouped_answers_query = session.query(Answer.variant_id, count('*').label('cnt')).group_by(Answer.variant_id)\
@@ -333,14 +341,16 @@ class Hint(_Base):
         self.question_id = question_id
         self.hint_title = hint_title
 
-    # __table_args__ = (UniqueConstraint(player_id, question_id, hint_title, name='stupid_index_to_allow_foreign_key_to_variant_id'),)
-
 
 class Property(_Base):
     __tablename__ = 'property'
     property_key = Column(String(20), primary_key=True, nullable=False)
 
     property_value = Column(String(1000))
+
+    def __init__(self, property_key, property_value):
+        self.property_key = property_key
+        self.property_value = property_value
 
 
 def init():

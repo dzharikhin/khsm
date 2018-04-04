@@ -1,12 +1,13 @@
 # coding=utf-8
 import os
-import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
+from telegram import Bot
+
 import loggers
 import service
-from bot import BOT_STAGE, get_bot
+from khsm_bot import BOT_STAGE
 
 logger = loggers.logging.getLogger(__name__)
 
@@ -43,6 +44,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_message(params)
         elif req_path.startswith('release'):
             self._handle_release(params)
+        elif req_path.startswith('stage'):
+            self._handle_stage(params)
         else:
             self._write('ERROR', status=404)
 
@@ -72,33 +75,29 @@ class Handler(BaseHTTPRequestHandler):
         else:
             chat_ids = '\n'.join(params.get('chat_ids', [])).split(',')
         msg = '\n'.join(params.get('msg', []))
-        bot = get_bot()
-        if bot:
-            for chat_id in chat_ids:
-                try:
-                    bot.send_message(chat_id=chat_id, text=msg)
-                except Exception:
-                    logger.error('Error sending message', exc_info=True)
+        for chat_id in chat_ids:
+            try:
+                bot.send_message(chat_id=chat_id, text=msg)
+            except Exception:
+                logger.error('Error sending message', exc_info=True)
         self._write('OK')
 
     def _handle_release(self, params):
         current_stage = service.get_property(BOT_STAGE, '1')
         msg = '\n'.join(params.get('msg', []))
-        service.release_losers(current_stage, lambda player: get_bot().send_message(chat_id=player.chat_id, text=msg))
+        service.release_losers(current_stage, lambda player: bot.send_message(chat_id=player.chat_id, text=msg))
+        self._write('OK')
+
+    def _handle_stage(self, params):
+        stage = '\n'.join(params.get('stage', []))
+        service.set_property(BOT_STAGE, stage)
         self._write('OK')
 
 
-class ServerThread(threading.Thread):
-    def __init__(self, name):
-        threading.Thread.__init__(self, daemon=True)
-        self.name = name
-        server_address = ('', int(os.environ['CONSOLE_PORT']))
-        self.httpd = HTTPServer(server_address, Handler)
-
-    def run(self):
-            self.httpd.serve_forever()
-
-
-def init():
-    thread = ServerThread("ConsoleServerThread")
-    thread.start()
+if __name__ == "__main__":
+    service.init()
+    global bot
+    bot = Bot(os.environ['BOT_TOKEN'])
+    server_address = ('', int(os.environ['CONSOLE_PORT']))
+    httpd = HTTPServer(server_address, Handler)
+    httpd.serve_forever()

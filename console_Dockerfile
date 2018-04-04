@@ -1,0 +1,4 @@
+FROM python:3.4-alpine
+ADD . /
+RUN pip install -r requirements.txt
+CMD ["python", "console.py"]
