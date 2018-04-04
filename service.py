@@ -128,7 +128,7 @@ def get_player_place(session, stage, player_id):
     all_rating = rating_query.subquery()
     player_score = rating_query.filter(Answer.player_id == player_id).first()
     if not player_score:
-        return None
+        return None, None
     return player_score, session.query(count('*') + 1).select_from(all_rating)\
         .filter(or_(all_rating.c.points > player_score[1],
                     and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries < player_score[2]),
