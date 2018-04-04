@@ -48,12 +48,17 @@ def handle_reply(message, player, question):
             state = service.get_game_state(current_stage, player, try_limit)
             player = service.save_player_contacts(player, '\n'.join([part for part in [player.contacts, message.text] if part is not None]), state)
     if player.state == 'INIT':
-        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, 'Добро пожаловать в игру! Помните про 2 подсказки: '
-                                                                          '/fiftyfifty '
-                                                                          'и /jpoint-help'))
+        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, """Добро пожаловать в игру!
+Победит тот, кто ответит на самое большое количество вопросов как можно быстрее, использовав при этом минимум попыток и подсказок. 
+Ах, да.. подсказки! Их две:
+/fiftyfifty - уберет половину неправильных вариантов
+/jpoint-help - покажет текущее распределение ответов на текущий вопросдругих участников
+Подробнее можно почитать в /help
+Поехали!
+"""))
         player = service.set_player_state(player, 'PLAY')
     if player.state == 'REPEAT':
-        _reply_to_player(message, text=service.get_property(BOT_REPEAT_TEXT, 'Вы ошиблись, но можете попробовать еще раз'), force_reply=True)
+        _reply_to_player(message, text=service.get_property(BOT_REPEAT_TEXT, 'Ошибка.. Попробуй еще раз!'), force_reply=True)
         player = service.set_player_state(player, 'PLAY')
     if player.state == 'PLAY':
         if question:
@@ -61,16 +66,16 @@ def handle_reply(message, player, question):
         else:
             player = service.set_player_state(player, 'WIN')
     if player.state == 'WIN':
-        _reply_to_player(message, service.get_property(BOT_WIN_TEXT, 'Поздравляем! Вы ответили на все вопросы'))
+        _reply_to_player(message, service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения'))
         if not player.contacts:
             player = service.set_player_state(player, 'CONTACT')
     if player.state == 'LOSE':
-        _reply_to_player(message, service.get_property(BOT_LOSE_TEXT, 'К сожалению, игра окончена'))
+        _reply_to_player(message, service.get_property(BOT_LOSE_TEXT, 'К сожалению, твоя игра окончена('))
         if not player.contacts:
             player = service.set_player_state(player, 'CONTACT')
     if player.state == 'CONTACT':
-            _reply_to_player(message, service.get_property(BOT_CONTACT_REQUIRE_TEXT, 'Оставьте нам контактную информацию - телефон, email '
-                                                                                     'и как к Вам можно обращаться'))
+            _reply_to_player(message, service.get_property(BOT_CONTACT_REQUIRE_TEXT, 'Оставь нам контактную информацию - телефон, email '
+                                                                                     'и как к Тебе обращаться?)'))
             player = service.set_player_state(player, 'CONTACT_REQUEST')
 
 
@@ -94,7 +99,7 @@ def public_help_handler(bot, update):
     if player.state in ['PLAY', 'REPEAT']:
         already_used_hint = service.add_hint(player.player_id, question.question_id, 'ZAL_HELP')
         if already_used_hint:
-            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Вы уже воспользовались этой подсказкой'))
+            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна)'))
             return
 
         grouped, total = service.get_answer_stats(question.question_id)
@@ -114,7 +119,7 @@ def fifty_handler(bot, update):
     if player.state in ['PLAY', 'REPEAT']:
         already_used_hint = service.add_hint(player.player_id, question.question_id, 'FIFTY')
         if already_used_hint:
-            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Вы уже воспользовались этой подсказкой'))
+            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна)'))
             return
         variants_to_leave = len(question.variants) - int(len(question.variants) / 2)
         if variants_to_leave > 1:
@@ -155,7 +160,13 @@ def contact_handler(bot, update):
 
 
 def help_handler(bot, update):
-    help_text = service.get_property(BOT_HELP_TEXT, 'Шлите /start или любое другое сообщение, чтобы начать')
+    help_text = service.get_property(BOT_HELP_TEXT, """Список команд:
+    /start - начать игру. Игру также начнет любое произвольное сообщение
+    /jpoint_help - как распределились ответы на текущий вопрос. Доступна один раз
+    /fiftyfifty - убрать половину неверных вариантов. Доступна один раз
+    /top - покажет игровой рейтинг 
+    /contacts - оставьте нам контактную информацию для связи. Возможно, это учитывается в рейтинге;)
+""")
     _reply_to_player(update.message, help_text)
 
 
