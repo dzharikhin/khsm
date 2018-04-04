@@ -136,12 +136,13 @@ def top_handler(bot, update):
     current_stage = service.get_property(BOT_STAGE, '1')
     top, question_amount = service.get_top(current_stage, 10)
     if top:
-        text = '\n'.join(['{}. {} - {}'.format(i + 1, '*{}*'.format(player[0]) if player[6] == str(user.id) else player[0], player[1])
+        text = '\n'.join(['{bold}{index}. {username} - {points}pts{bold}'.format(index=i + 1, username=player[0], points=player[1],
+                                                                              bold='*' if player[6] == str(user.id) else '')
                           for i, player in enumerate(top)])
         if not next((player for player in top if player[6] == str(user.id)), None):
             player_score, player_place = service.get_player_place(current_stage, str(user.id))
             if player_score:
-                text = '\n'.join([text, '...', '{}. *{}* - {}'.format(player_place, user.username, player_score[1])])
+                text = '\n'.join([text, '...', '*{}. {} - {}pts*'.format(player_place, user.username, player_score[1])])
 
         _reply_to_player(update.message, text, parse_mode=telegram.ParseMode.MARKDOWN)
     else:

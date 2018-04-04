@@ -133,9 +133,9 @@ def get_player_place(session, stage, player_id):
         .filter(or_(all_rating.c.points > player_score[1],
                     and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries < player_score[2]),
                     and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries == player_score[2],
-                         coalesce(all_rating.c.hint_count, 0) < player_score[3]),
+                         all_rating.c.hint_count < player_score[3]),
                     and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries == player_score[2],
-                         coalesce(all_rating.c.hint_count, 0) == player_score[3], all_rating.c.last_answer_time < player_score[4]))).scalar()
+                         all_rating.c.hint_count == player_score[3], all_rating.c.last_answer_time < player_score[4]))).scalar()
 
 
 @with_session()
@@ -147,7 +147,7 @@ def get_top(session, stage, top_size=None):
     entities = entities.from_self().join(Player).with_entities(Player.player_name, 'points', 'sum_tries',
                                                                coalesce(Column('hint_count'), 0), 'last_answer_time', Player.chat_id,
                                                                Player.player_id) \
-        .order_by(desc('points'), 'sum_tries', coalesce(Column('hint_count'), 0), 'last_answer_time')
+        .order_by(desc('points'), 'sum_tries', 'hint_count', 'last_answer_time')
     top = entities.all()
     return top, question_amount
 
@@ -261,8 +261,9 @@ def _get_rating(session, stage):
         .group_by(Answer.player_id) \
         .from_self()\
         .outerjoin(hint_usage_query, hint_usage_query.c.player_id == Answer.player_id)\
-        .with_entities(Answer.player_id, 'points', 'sum_tries', 'hint_count', 'last_answer_time') \
-        .order_by(desc('points'), 'sum_tries', coalesce(hint_usage_query.c.hint_count, 0), 'last_answer_time')
+        .with_entities(Answer.player_id, 'points', 'sum_tries', coalesce(Column('hint_count'), 0).label('hint_count'),
+                       'last_answer_time') \
+        .order_by(desc('points'), 'sum_tries', 'hint_count', 'last_answer_time')
 
 
 class Question(_Base):
