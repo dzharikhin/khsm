@@ -118,12 +118,16 @@ def get_answer_stats(session, question_id):
 def get_player_place(session, stage, player_id):
     rating_query = _get_rating(session, stage)
     all_rating = rating_query.subquery()
-    user_score = rating_query.filter(Answer.player_id == player_id).first()
-    if not user_score:
+    player_score = rating_query.filter(Answer.player_id == player_id).first()
+    if not player_score:
         return None
-    return session.query(count('*') + 1).select_from(all_rating)\
-        .filter(or_(all_rating.c.points > user_score[1], and_(all_rating.c.points == user_score[1],
-                                                              all_rating.c.last_answer_time < user_score[2]))).scalar()
+    return player_score, session.query(count('*') + 1).select_from(all_rating)\
+        .filter(or_(all_rating.c.points > player_score[1],
+                    and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries < player_score[2]),
+                    and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries == player_score[2],
+                         coalesce(all_rating.c.hint_count, 0) < player_score[3]),
+                    and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries == player_score[2],
+                         coalesce(all_rating.c.hint_count, 0) == player_score[3], all_rating.c.last_answer_time < player_score[4]))).scalar()
 
 
 @with_session()
@@ -133,7 +137,8 @@ def get_top(session, stage, top_size=None):
     if top_size:
         entities = entities.limit(top_size)
     entities = entities.from_self().join(Player).with_entities(Player.player_name, 'points', 'sum_tries',
-                                                               coalesce(Column('hint_count'), 0), 'last_answer_time', Player.chat_id)\
+                                                               coalesce(Column('hint_count'), 0), 'last_answer_time', Player.chat_id,
+                                                               Player.player_id) \
         .order_by(desc('points'), 'sum_tries', coalesce(Column('hint_count'), 0), 'last_answer_time')
     top = entities.all()
     return top, question_amount
