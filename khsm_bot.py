@@ -91,6 +91,8 @@ def button_handler(bot, callback_update):
 
 
 def _get_try_limit(player, question):
+    if not question:
+        return int(service.get_property(BOT_TRY_LIMIT, '2'))
     hint = service.get_hint_for_stage(player.player_id, question.stage, service.MISTAKE_HINT_TITLE)
     if not hint or hint.question_id == question.question_id:
         return int(service.get_property(BOT_TRY_LIMIT, '2'))
