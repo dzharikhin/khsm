@@ -53,7 +53,7 @@ def handle_reply(message, player, question):
             state = service.get_game_state(current_stage, player, try_limit)
             player = service.save_player_contacts(player, '\n'.join([part for part in [player.contacts, message.text] if part is not None]), state)
     if player.state == 'INIT':
-        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, """Помни про право подсказки и право на ошибку!
+        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, """Помни про право подсказки и право на ошибку
 Подробности - в /help
 Удачи!
 """))
@@ -145,15 +145,18 @@ def top_handler(bot, update):
     current_stage = service.get_property(BOT_STAGE, '1')
     top, question_amount = service.get_top(current_stage, int(service.get_property(BOT_TOP_LIMIT, '10')))
     if top:
-        text = '\n'.join(['{bold}{index}. {username} - {points}pts{bold}'.format(index=i + 1, username=player[0], points=player[1],
-                                                                              bold='*' if player[6] == str(user.id) else '')
+        text = '\n'.join(['{bold_open}{index}. {username} - {points}pts{bold_close}'.format(index=i + 1,
+                                                                                            username=player[0] if player[0] else 'аноним',
+                                                                                            points=player[1],
+                                                                                            bold_open='<b>' if player[6] == str(user.id) else '',
+                                                                                            bold_close='</b>' if player[6] == str(user.id) else '')
                           for i, player in enumerate(top)])
         if not next((player for player in top if player[6] == str(user.id)), None):
             player_score, player_place = service.get_player_place(current_stage, str(user.id))
             if player_score:
-                text = '\n'.join([text, '...', '*{}. {} - {}pts*'.format(player_place, user.username, player_score[1])])
+                text = '\n'.join([text, '...', '<b>{}. {} - {}pts</b>'.format(player_place, user.username, player_score[1])])
 
-        _reply_to_player(update.message, text, parse_mode=telegram.ParseMode.MARKDOWN)
+        _reply_to_player(update.message, text, parse_mode=telegram.ParseMode.HTML)
     else:
         start_handler(bot, update)
 
