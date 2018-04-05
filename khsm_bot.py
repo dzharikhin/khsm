@@ -67,16 +67,24 @@ def handle_reply(message, player, question):
         else:
             player = service.set_player_state(player, 'WIN')
     if player.state == 'WIN':
-        _reply_to_player(message, service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения'))
         if not player.contacts:
             player = service.set_player_state(player, 'CONTACT')
+        else:
+            top, question_amount = service.get_top(current_stage, int(service.get_property(BOT_TOP_LIMIT, '10')))
+            if next((player for player in top if player[6] == str(user.id)), None):
+                text = service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения')
+            else:
+                text = service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения')
+            _reply_to_player(message, text)
+
     if player.state == 'LOSE':
-        _reply_to_player(message, service.get_property(BOT_LOSE_TEXT, 'К сожалению, твоя игра окончена('))
         if not player.contacts:
             player = service.set_player_state(player, 'CONTACT')
+        else:
+            _reply_to_player(message, service.get_property(BOT_LOSE_TEXT, 'К сожалению, твоя игра окончена, но все равно - спасибо!'))
     if player.state == 'CONTACT':
-            _reply_to_player(message, service.get_property(BOT_CONTACT_REQUIRE_TEXT, 'Оставь нам контактную информацию - телефон, email '
-                                                                                     'и как к Тебе обращаться?)'))
+            _reply_to_player(message, service.get_property(BOT_CONTACT_REQUIRE_TEXT, 'Напиши, пожалуйста, в сообщении свои контактные данные - '
+                                                                                     'телефон, email и как к тебе обращаться'))
             player = service.set_player_state(player, 'CONTACT_REQUEST')
 
 
@@ -109,7 +117,7 @@ def public_help_handler(bot, update):
     if player.state in ['PLAY', 'REPEAT']:
         already_used_hint = service.add_hint(player.player_id, question.question_id, 'ZAL_HELP')
         if already_used_hint:
-            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна)'))
+            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна'))
             return
 
         grouped, total = service.get_answer_stats(question.question_id)
@@ -129,7 +137,7 @@ def fifty_handler(bot, update):
     if player.state in ['PLAY', 'REPEAT']:
         already_used_hint = service.add_hint(player.player_id, question.question_id, 'FIFTY')
         if already_used_hint:
-            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна)'))
+            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна'))
             return
         variants_to_leave = len(question.variants) - int(len(question.variants) / 2)
         if variants_to_leave > 1:
