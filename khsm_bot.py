@@ -40,12 +40,15 @@ def start_handler(bot, update):
 
 
 def handle_reply(message, player, question):
+    try_limit = int(service.get_property(BOT_TRY_LIMIT, '2'))
+    current_stage = service.get_property(BOT_STAGE, '1')
+    if player.state in ['WIN', 'LOSE']:
+        state = service.get_game_state(current_stage, player, try_limit)
+        player = service.set_player_state(player, state)
     if player.state == 'CONTACT_REQUEST':
         if message.text.startswith('/start'):
             player = service.set_player_state(player, 'CONTACT')
         else:
-            try_limit = int(service.get_property(BOT_TRY_LIMIT, '2'))
-            current_stage = service.get_property(BOT_STAGE, '1')
             state = service.get_game_state(current_stage, player, try_limit)
             player = service.save_player_contacts(player, '\n'.join([part for part in [player.contacts, message.text] if part is not None]), state)
     if player.state == 'INIT':

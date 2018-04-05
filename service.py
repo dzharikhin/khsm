@@ -65,11 +65,12 @@ def add_hint(session, player_id, question_id, hint_title):
     :return: True if already used, False - otherwise
     """
     used_hint = session.query(Hint).filter(and_(Hint.player_id == player_id, Hint.hint_title == hint_title)).first()
-    if used_hint:
-        return True
-    new_hint = Hint(player_id, question_id, hint_title)
-    session.add(new_hint)
-    return False
+    if not used_hint or session.query(Question.stage).filter(Question.question_id == used_hint.question_id).scalar() != \
+            session.query(Question.stage).filter(Question.question_id == question_id).scalar():
+        new_hint = Hint(player_id, question_id, hint_title)
+        session.add(new_hint)
+        return False
+    return True
 
 
 @with_session()
@@ -251,7 +252,8 @@ def _set_user_state(session, player, state):
 
 
 def _get_rating(session, stage):
-    hint_usage_query = session.query(Hint.player_id, count(Hint.question_id).label('hint_count')).group_by(Hint.player_id).subquery()
+    hint_usage_query = session.query(Hint.player_id, count(Hint.question_id).label('hint_count')).join(Question)\
+        .filter(Question.stage == stage).group_by(Hint.player_id).subquery()
     return session.query(Answer.player_id,
                          count(Answer.variant_id).label('points'),
                          max(Answer.answer_time).label('last_answer_time'),
