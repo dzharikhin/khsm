@@ -53,16 +53,9 @@ def handle_reply(message, player, question):
             state = service.get_game_state(current_stage, player, try_limit)
             player = service.save_player_contacts(player, '\n'.join([part for part in [player.contacts, message.text] if part is not None]), state)
     if player.state == 'INIT':
-        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, """Добро пожаловать в игру!
-Победить в ней легко - достаточно ответить на вопросы как можно быстрее, использовав при этом минимум подсказок!)
-Ах, да.. подсказки! Их две:
-/fiftyfifty - уберет половину неправильных вариантов из вопроса
-/jpoint_help - помощь зала, покажет текущее распределение ответов на вопрос
-Победителей ждут ценные призы!
-и еще кое-что... У тебя есть одно право на ошибку;)
-
-Справка по командам - в /help
-Поехали!
+        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, """Помни про право подсказки и право на ошибку!
+Подробности - в /help
+Удачи!
 """))
         player = service.set_player_state(player, 'PLAY')
     if player.state == 'REPEAT':
@@ -171,7 +164,9 @@ def contact_handler(bot, update):
 
 
 def help_handler(bot, update):
-    help_text = service.get_property(BOT_HELP_TEXT, """Список команд:
+    help_text = service.get_property(BOT_HELP_TEXT, """Победить в нашей игре - легко! 
+Достаточно ответить на вопросы как можно быстрее, использовав при этом минимум подсказок!)
+Список команд:
 /start - начать игру. Игру также начнет любое произвольное сообщение
 /jpoint_help - как распределились ответы на текущий вопрос. Доступна один раз
 /fiftyfifty - убрать половину неверных вариантов. Доступна один раз
