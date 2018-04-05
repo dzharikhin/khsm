@@ -13,6 +13,8 @@ logger = loggers.logging.getLogger(__name__)
 _Base = declarative_base()
 _Session = sessionmaker(expire_on_commit=False)
 
+MISTAKE_HINT_TITLE = 'MISTAKE'
+
 
 def with_session():
     def decorator(func):
@@ -56,21 +58,12 @@ def add_player(session, player_id, player_type, player_name, chat_id, initial_st
 
 @with_session()
 def add_hint(session, player_id, question_id, hint_title):
-    """
-    adds hint usage
-    :param session:
-    :param player_id:
-    :param question_id:
-    :param hint_title:
-    :return: True if already used, False - otherwise
-    """
-    used_hint = session.query(Hint).filter(and_(Hint.player_id == player_id, Hint.hint_title == hint_title)).first()
-    if not used_hint or session.query(Question.stage).filter(Question.question_id == used_hint.question_id).scalar() != \
-            session.query(Question.stage).filter(Question.question_id == question_id).scalar():
-        new_hint = Hint(player_id, question_id, hint_title)
-        session.add(new_hint)
-        return False
-    return True
+    return _add_hint(session, player_id, question_id, hint_title)
+
+
+@with_session()
+def get_hint_for_stage(session, player_id, stage, hint_title):
+    return _get_hint_for_stage(session, player_id, stage, hint_title)
 
 
 @with_session()
@@ -200,6 +193,29 @@ def get_players(sesion):
     return sesion.query(Player).all()
 
 
+def _add_hint(session, player_id, question_id, hint_title):
+    """
+    adds hint usage
+    :param session:
+    :param player_id:
+    :param question_id:
+    :param hint_title:
+    :return: True if already used, False - otherwise
+    """
+    question_stage = session.query(Question.stage).filter(Question.question_id == question_id).scalar()
+    used_hint = _get_hint_for_stage(session, player_id, question_stage, hint_title)
+    if not used_hint:
+        new_hint = Hint(player_id, question_id, hint_title)
+        session.add(new_hint)
+        return False
+    return True
+
+
+def _get_hint_for_stage(session, player_id, stage, hint_title):
+    return session.query(Hint).join(Question).filter(and_(Hint.player_id == player_id, Hint.hint_title == hint_title,
+                                                     Question.stage == stage)).first()
+
+
 def _calculate_state(question, answer, try_limit):
     if not question:
         return 'WIN'
@@ -216,6 +232,7 @@ def _calculate_state(question, answer, try_limit):
 def _add_answer(session, player, question_id, variant_id, answer_time):
     existing_answer = session.query(Answer).filter(and_(Answer.player_id == player.player_id, Answer.question_id == question_id)).first()
     if existing_answer:
+        _add_hint(session, player.player_id, question_id, MISTAKE_HINT_TITLE)
         session.begin_nested()
         existing_answer.tries += 1
         existing_answer.variant_id = variant_id

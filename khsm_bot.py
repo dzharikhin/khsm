@@ -27,6 +27,7 @@ BOT_HELP_TEXT = 'bot_help_text'
 BOT_STAGE = 'bot_stage'
 BOT_SKIP_REPLY = 'bot_skip_reply'
 BOT_TRY_LIMIT = 'bot_try_limit'
+BOT_TOP_LIMIT = 'bot_top_limit'
 
 PLAYER_TYPE = 'TG'
 
@@ -40,7 +41,7 @@ def start_handler(bot, update):
 
 
 def handle_reply(message, player, question):
-    try_limit = int(service.get_property(BOT_TRY_LIMIT, '2'))
+    try_limit = _get_try_limit(player, question)
     current_stage = service.get_property(BOT_STAGE, '1')
     if player.state in ['WIN', 'LOSE']:
         state = service.get_game_state(current_stage, player, try_limit)
@@ -53,11 +54,14 @@ def handle_reply(message, player, question):
             player = service.save_player_contacts(player, '\n'.join([part for part in [player.contacts, message.text] if part is not None]), state)
     if player.state == 'INIT':
         _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, """Добро пожаловать в игру!
-Победит тот, кто ответит на самое большое количество вопросов как можно быстрее, использовав при этом минимум попыток и подсказок. 
+Победить в ней легко - достаточно ответить на вопросы как можно быстрее, использовав при этом минимум подсказок!)
 Ах, да.. подсказки! Их две:
-/fiftyfifty - уберет половину неправильных вариантов из текущего вопроса
-/jpoint_help - покажет текущее распределение ответов на текущий вопрос
-Подробнее можно почитать в /help
+/fiftyfifty - уберет половину неправильных вариантов из вопроса
+/jpoint_help - помощь зала, покажет текущее распределение ответов на вопрос
+Победителей ждут ценные призы!
+и еще кое-что... У тебя есть одно право на ошибку;)
+
+Справка по командам - в /help
 Поехали!
 """))
         player = service.set_player_state(player, 'PLAY')
@@ -88,9 +92,16 @@ def button_handler(bot, callback_update):
     current_stage = service.get_property(BOT_STAGE, '1')
     player, question = service.get_current_ctx(str(user.id), current_stage)
     if player.state in ['PLAY', 'REPEAT']:
-        try_limit = int(service.get_property(BOT_TRY_LIMIT, '2'))
+        try_limit = _get_try_limit(player, question)
         player, question = service.process_answer(current_stage, player, callback_update.callback_query.data, datetime.datetime.now(), try_limit)
     handle_reply(callback_update.effective_message, player, question)
+
+
+def _get_try_limit(player, question):
+    hint = service.get_hint_for_stage(player.player_id, question.stage, service.MISTAKE_HINT_TITLE)
+    if not hint or hint.question_id == question.question_id:
+        return int(service.get_property(BOT_TRY_LIMIT, '2'))
+    return 1
 
 
 def public_help_handler(bot, update):
@@ -137,7 +148,7 @@ def fifty_handler(bot, update):
 def top_handler(bot, update):
     user = update.message.from_user
     current_stage = service.get_property(BOT_STAGE, '1')
-    top, question_amount = service.get_top(current_stage, 10)
+    top, question_amount = service.get_top(current_stage, int(service.get_property(BOT_TOP_LIMIT, '10')))
     if top:
         text = '\n'.join(['{bold}{index}. {username} - {points}pts{bold}'.format(index=i + 1, username=player[0], points=player[1],
                                                                               bold='*' if player[6] == str(user.id) else '')
@@ -165,7 +176,7 @@ def help_handler(bot, update):
 /jpoint_help - как распределились ответы на текущий вопрос. Доступна один раз
 /fiftyfifty - убрать половину неверных вариантов. Доступна один раз
 /top - покажет игровой рейтинг 
-/contacts - оставьте нам контактную информацию для связи. Возможно, это учитывается в рейтинге;)
+/contacts - оставь нам контактную информацию для связи. Возможно, это учитывается в рейтинге;)
 """)
     _reply_to_player(update.message, help_text)
 
