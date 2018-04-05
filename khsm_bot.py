@@ -71,7 +71,7 @@ def handle_reply(message, player, question):
             player = service.set_player_state(player, 'CONTACT')
         else:
             top, question_amount = service.get_top(current_stage, int(service.get_property(BOT_TOP_LIMIT, '10')))
-            if next((player for player in top if player[6] == str(user.id)), None):
+            if next((player for player in top if player[6] == player.player_id), None):
                 text = service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения')
             else:
                 text = service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения')
