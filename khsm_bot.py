@@ -4,6 +4,7 @@ import datetime
 import os
 import random
 
+import json
 import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
@@ -93,8 +94,10 @@ def button_handler(bot, callback_update):
     current_stage = service.get_property(BOT_STAGE, '1')
     player, question = service.get_current_ctx(str(user.id), current_stage)
     if player.state in ['PLAY', 'REPEAT']:
-        try_limit = _get_try_limit(player, question)
-        player, question = service.process_answer(current_stage, player, callback_update.callback_query.data, datetime.datetime.now(), try_limit)
+        question_id, variant_id = json.loads(callback_update.callback_query.data)
+        if question.question_id == question_id:
+            try_limit = _get_try_limit(player, question)
+            player, question = service.process_answer(current_stage, player, variant_id, datetime.datetime.now(), try_limit)
     handle_reply(callback_update.effective_message, player, question)
 
 
@@ -199,7 +202,7 @@ def _reply_to_player(message, text, *args, **kwargs):
 
 
 def _build_keyboard(variants):
-    options = [InlineKeyboardButton(variant.text_value, callback_data=variant.variant_id)
+    options = [InlineKeyboardButton(variant.text_value, callback_data=json.dumps((variant.question_id, variant.variant_id)))
                for variant in sorted(variants, key=lambda x: x.variant_id)]
     return InlineKeyboardMarkup(_build_menu(options, n_cols=1))
 
