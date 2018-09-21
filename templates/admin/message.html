@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Send message</title>
+</head>
+<script>
+    function toggleAllCheckboxes() {
+        var inputs = document.querySelectorAll("td input[type='checkbox']");
+        for(var i = 0; i < inputs.length; i++) {
+            inputs[i].checked = !inputs[i].checked;
+        }
+    }
+</script>
+<body>
+    <div>
+        <a href="/admin">Main admin page</a>
+    </div>
+    {% if failed_chat_ids %}
+        <div style="color:red">{{ failed_chat_ids }}</div>
+    {% endif %}
+    <form method="POST">
+        <label><textarea name="message"></textarea>Message to send</label>
+        <table cellpadding="5">
+            <tr>
+                <th><input type="checkbox" onclick="toggleAllCheckboxes(); return true;"/></th>
+                <th>Place</th>
+                <th>Name</th>
+                <th>Score</th>
+                <th>Tries</th>
+                <th>Hints</th>
+                <th>Latest answer time</th>
+            </tr>
+            {% for player in top %}
+            <tr>
+                <td><input type="checkbox" name="chat_id" value="{{ player[1].chat_id }}"/></td>
+                <td>{{ player[0] }}</td>
+                <td>{{ player[1].player_name }}</td>
+                <td>{{ player[2] }} pts</td>
+                <td>{{ player[3] }} tries</td>
+                <td>{{ player[4] }} hints</td>
+                <td>{{ player[5] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        <input type="submit" value="Send message">
+    </form>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rename user</title>
+</head>
+<body>
+<div>
+    <a href="/admin">Main admin page</a>
+</div>
+<form method="POST">
+    <label><input type="text" name="player_name" value="{{ player.player_name }}"/>New name</label>
+    <input type="hidden" name="player_id" value="{{ player.player_id }}">
+    <input type="submit" value="Change name">
+</form>
+</body>
+</html>

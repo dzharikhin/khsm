@@ -5,206 +5,200 @@ import os
 import random
 
 import json
-import telegram
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
+from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, Filters
 
 import loggers
 import service
 
 logger = loggers.logging.getLogger(__name__)
 
-BOT_GREETING_TEXT = 'bot_greeting_text'
+BOT_RETRY_TEXT = 'bot_retry_text'
 BOT_WIN_TEXT = 'bot_win_text'
 BOT_LOSE_TEXT = 'bot_lose_text'
-BOT_CONTACT_REQUIRE_TEXT = 'bot_contact_request_text'
-BOT_FINAL_TEXT = 'bot_final_text'
 
 BOT_PLACE_TEXT = 'bot_place_text'
-BOT_HINT_DOUBLE_TEXT = 'bot_hint_double_text'
-BOT_REPEAT_TEXT = 'bot_repeat_text'
+
 BOT_HELP_TEXT = 'bot_help_text'
 
-BOT_STAGE = 'bot_stage'
-BOT_SKIP_REPLY = 'bot_skip_reply'
-BOT_TRY_LIMIT = 'bot_try_limit'
-BOT_TOP_LIMIT = 'bot_top_limit'
-
-PLAYER_TYPE = 'TG'
+BOT_HINT_UNAVAILABLE_TEXT = 'bot_hint_unavailable_text'
+BOT_FIFTY_FOR_TWO_TEXT = 'bot_fifty_for_two_text'
 
 
-def start_handler(bot, update):
-    user = update.message.from_user
-    player = service.add_player(str(user.id), PLAYER_TYPE, user.username, update.message.chat_id, 'INIT', datetime.datetime.now())
-    current_stage = service.get_property(BOT_STAGE, '1')
-    player, question = service.get_current_ctx(player.player_id, current_stage)
-    handle_reply(update.message, player, question)
+def start_handler(_, update):
+    user = update.effective_user
+    player = service.add_player(user, update.effective_message.chat_id, datetime.datetime.now())
+    logger.info('Player id={} wrote {}'.format(player.player_id, update.effective_message.text))
+    failed_answer = service.get_overlimited_answer(user)
+    _handle_message(user, update, failed_answer)
 
 
-def handle_reply(message, player, question):
-    try_limit = _get_try_limit(player, question)
-    current_stage = service.get_property(BOT_STAGE, '1')
-    if player.state in ['WIN', 'LOSE']:
-        state = service.get_game_state(current_stage, player, try_limit)
-        player = service.set_player_state(player, state)
-    if player.state == 'CONTACT_REQUEST':
-        if message.text.startswith('/start'):
-            player = service.set_player_state(player, 'CONTACT')
-        else:
-            state = service.get_game_state(current_stage, player, try_limit)
-            player = service.save_player_contacts(player, '\n'.join([part for part in [player.contacts, message.text] if part is not None]), state)
-    if player.state == 'INIT':
-        _reply_to_player(message, service.get_property(BOT_GREETING_TEXT, """Помни про право подсказки и право на ошибку
-Подробности - в /help
-Удачи!
-"""))
-        player = service.set_player_state(player, 'PLAY')
-    if player.state == 'REPEAT':
-        _reply_to_player(message, text=service.get_property(BOT_REPEAT_TEXT, 'Ошибка.. Попробуй еще раз!'), force_reply=True)
-        player = service.set_player_state(player, 'PLAY')
-    if player.state == 'PLAY':
-        if question:
-            _reply_to_player(message, text=question.text_value, reply_markup=_build_keyboard(question.variants), force_reply=True)
-        else:
-            player = service.set_player_state(player, 'WIN')
-    if player.state == 'WIN':
-        if not player.contacts:
-            player = service.set_player_state(player, 'CONTACT')
-        else:
-            top, question_amount = service.get_top(current_stage, int(service.get_property(BOT_TOP_LIMIT, '10')))
-            if next((player for player in top if player[6] == player.player_id), None):
-                text = service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения')
-            else:
-                text = service.get_property(BOT_WIN_TEXT, 'Поздравляем! Все вопросы - позади! Следи за /top и временем награждения')
-            _reply_to_player(message, text)
-
-    if player.state == 'LOSE':
-        if not player.contacts:
-            player = service.set_player_state(player, 'CONTACT')
-        else:
-            _reply_to_player(message, service.get_property(BOT_LOSE_TEXT, 'К сожалению, твоя игра окончена, но все равно - спасибо!'))
-    if player.state == 'CONTACT':
-            _reply_to_player(message, service.get_property(BOT_CONTACT_REQUIRE_TEXT, 'Напиши, пожалуйста, в сообщении свои контактные данные - '
-                                                                                     'телефон, email и как к тебе обращаться'))
-            player = service.set_player_state(player, 'CONTACT_REQUEST')
-
-
-def button_handler(bot, callback_update):
+def answer_button_handler(_, callback_update):
     user = callback_update.effective_user
-    current_stage = service.get_property(BOT_STAGE, '1')
-    player, question = service.get_current_ctx(str(user.id), current_stage)
-    if player.state in ['PLAY', 'REPEAT']:
-        question_id, variant_id = json.loads(callback_update.callback_query.data)
-        if question.question_id == question_id:
-            try_limit = _get_try_limit(player, question)
-            player, question = service.process_answer(current_stage, player, variant_id, datetime.datetime.now(), try_limit)
-    handle_reply(callback_update.effective_message, player, question)
-
-
-def _get_try_limit(player, question):
-    if not question:
-        return int(service.get_property(BOT_TRY_LIMIT, '2'))
-    hint = service.get_hint_for_stage(player.player_id, question.stage, service.MISTAKE_HINT_TITLE)
-    if not hint or hint.question_id == question.question_id:
-        return int(service.get_property(BOT_TRY_LIMIT, '2'))
-    return 1
-
-
-def public_help_handler(bot, update):
-    user = update.message.from_user
-    current_stage = service.get_property(BOT_STAGE, '1')
-    player, question = service.get_current_ctx(str(user.id), current_stage)
-    if not player:
-        start_handler(bot, update)
+    failed_answer = service.get_overlimited_answer(user)
+    if failed_answer:
+        _release_inline_button(callback_update)
         return
-    if player.state in ['PLAY', 'REPEAT']:
-        already_used_hint = service.add_hint(player.player_id, question.question_id, 'ZAL_HELP')
-        if already_used_hint:
-            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна'))
-            return
 
-        grouped, total = service.get_answer_stats(question.question_id)
-        text = '\n'.join(['{} - {}%'.format(variant[0], variant[1] / float(total) * 100 if total else 0) for variant in grouped])
-        _reply_to_player(update.message, text)
-    else:
-        handle_reply(update.message, player, question)
-
-
-def fifty_handler(bot, update):
-    user = update.message.from_user
-    current_stage = service.get_property(BOT_STAGE, '1')
-    player, question = service.get_current_ctx(str(user.id), current_stage)
-    if not player:
-        start_handler(bot, update)
+    _, question_id, variant_id = json.loads(callback_update.callback_query.data)
+    max_user_answered_question_id = service.get_max_passed_question_id(user)
+    if max_user_answered_question_id >= question_id:
+        _release_inline_button(callback_update)
         return
-    if player.state in ['PLAY', 'REPEAT']:
-        already_used_hint = service.add_hint(player.player_id, question.question_id, 'FIFTY')
-        if already_used_hint:
-            _reply_to_player(update.message, service.get_property(BOT_HINT_DOUBLE_TEXT, 'Подсказка больше не доступна'))
-            return
-        variants_to_leave = len(question.variants) - int(len(question.variants) / 2)
-        if variants_to_leave > 1:
-            rest = [variant for variant in question.variants if variant.correct]
-            rest += random.sample([variant for variant in question.variants if not variant.correct], variants_to_leave - len(rest))
-            _reply_to_player(update.message, text=question.text_value, reply_markup=_build_keyboard(rest), force_reply=True)
+
+    fail = not service.add_answer(user, question_id, variant_id, datetime.datetime.now())
+    _handle_message(user, callback_update, fail, current_question_id=question_id)
+
+
+def hint_button_handler(_, callback_update):
+    user = callback_update.effective_user
+    failed_answer = service.get_overlimited_answer(user)
+    if failed_answer:
+        _release_inline_button(callback_update)
+        return
+
+    _, hint_key, question_id = json.loads(callback_update.callback_query.data)
+    max_user_answered_question_id = service.get_max_passed_question_id(user)
+    if max_user_answered_question_id >= question_id:
+        _release_inline_button(callback_update)
+        return
+
+    hint_available = service.add_hint(user, hint_key, question_id)
+    if not hint_available:
+        already_used = service.get_property(BOT_HINT_UNAVAILABLE_TEXT, "Подсказка уже использована")
+        _show_notification_if_possible(callback_update, already_used)
+        return
+
+    if service.FIFTY_HINT_KEY == hint_key:
+        callback_answered = _handle_fifty(callback_update, user, question_id)
+        if not callback_answered:
+            _release_inline_button(callback_update)
+        return
+    if service.PUBLIC_HELP_HINT_KEY == hint_key:
+        _handle_public_help(callback_update, user, question_id)
+        _release_inline_button(callback_update)
+
+
+def _handle_message(user, update, fail, current_question_id=0):
+    if fail:
+        _handle_lose(update)
+        _release_inline_button(update)
+        return
+
+    max_user_answered_question_id = service.get_max_passed_question_id(user)
+    if max_user_answered_question_id < current_question_id:
+        _handle_retry(update)
+        return
+
+    max_question_id = service.get_max_question_id()
+    if max_user_answered_question_id == max_question_id:
+        _handle_win(update)
+        _release_inline_button(update)
+        return
+
+    _send_next_question(update, user, max_user_answered_question_id)
+    _release_inline_button(update)
+
+
+def _handle_retry(update):
+    retry_text = service.get_property(BOT_RETRY_TEXT, "Попробуйте еще раз")
+    _show_notification_if_possible(update, retry_text)
+
+
+def _send_next_question(update, user, current_question_id):
+    question = service.get_question(current_question_id + 1)
+    keyboard = _build_keyboard(question.question_id, {v.variant_id: v.text_value for v in question.variants}, service.get_available_hints(user))
+    update.effective_message.reply_text(question.text_value, reply_markup=keyboard)
+
+
+def _handle_win(update):
+    win_text = service.get_property(BOT_WIN_TEXT, "Вы успешно ответили на все вопросы")
+    update.effective_message.reply_text(win_text)
+
+
+def _handle_lose(update):
+    lose_text = service.get_property(BOT_LOSE_TEXT, "К сожалению, вы проиграли. Заходите к нам на стенд за кофе")
+    update.effective_message.reply_text(lose_text)
+
+
+def _handle_public_help(update, user, question_id):
+    question = service.get_question(question_id)
+    grouped, total_answer_count = service.get_answer_stats(question_id)
+    answers_mapping = dict(grouped)
+    keyboard = _build_keyboard(
+        question.question_id,
+        {v.variant_id: '{}({}%)'.format(v.text_value, _calculate_distribution(answers_mapping.get(v.variant_id, 0), total_answer_count)) for v in
+         question.variants},
+        service.get_available_hints(user),
+        columns=1
+    )
+    update.effective_message.edit_reply_markup(reply_markup=keyboard)
+
+
+def _calculate_distribution(target_answers_count, total_answers_count):
+    return target_answers_count / float(total_answers_count) * 100 if total_answers_count else 0
+
+
+def _handle_fifty(update, user, question_id):
+    """
+    :return: if callback_query answered
+    """
+    message = update.effective_message
+    question = service.get_question(question_id)
+    variants_to_leave = len(question.variants) - int(len(question.variants) / 2)
+    if variants_to_leave <= 1:
+        text = service.get_property(BOT_FIFTY_FOR_TWO_TEXT, 'Серьезно?)')
+        return _show_notification_if_possible(text, update)
+
+    rest = [variant for variant in question.variants if variant.correct]
+    rest += random.sample([variant for variant in question.variants if not variant.correct], variants_to_leave - len(rest))
+    keyboard = _build_keyboard(question.question_id, {v.variant_id: v.text_value for v in rest}, service.get_available_hints(user))
+    message.edit_reply_markup(reply_markup=keyboard)
+    return False
+
+
+def _show_notification_if_possible(update, text):
+    if update.callback_query:
+        update.callback_query.answer(text=text)
+        return True
+    return False
+
+
+def _release_inline_button(update):
+    # to release inline button
+    if update.callback_query:
+        update.callback_query.answer()
+
+
+def place_handler(_, update):
+    user = update.effective_user
+    service.add_player(user, update.effective_message.chat_id, datetime.datetime.now())
+    place = service.get_user_place(user)
+    if place:
+        place_text = service.get_property(BOT_PLACE_TEXT, 'Сейчас Вы на {}м месте').format(place)
+        update.effective_message.reply_text(place_text)
     else:
-        handle_reply(update.message, player, question)
+        start_handler(_, update)
 
 
-def top_handler(bot, update):
-    user = update.message.from_user
-    current_stage = service.get_property(BOT_STAGE, '1')
-    top, question_amount = service.get_top(current_stage, int(service.get_property(BOT_TOP_LIMIT, '10')))
-    if top:
-        text = '\n'.join(['{bold_open}{index}. {username} - {points}pts{bold_close}'.format(index=i + 1,
-                                                                                            username=player[0] if player[0] else 'аноним',
-                                                                                            points=player[1],
-                                                                                            bold_open='<b>' if player[6] == str(user.id) else '',
-                                                                                            bold_close='</b>' if player[6] == str(user.id) else '')
-                          for i, player in enumerate(top)])
-        if not next((player for player in top if player[6] == str(user.id)), None):
-            player_score, player_place = service.get_player_place(current_stage, str(user.id))
-            if player_score:
-                text = '\n'.join([text, '...', '<b>{}. {} - {}pts</b>'.format(player_place, user.username, player_score[1])])
-
-        _reply_to_player(update.message, text, parse_mode=telegram.ParseMode.HTML)
-    else:
-        start_handler(bot, update)
+def help_handler(_, update):
+    help_text = service.get_property(BOT_HELP_TEXT, "Победить в нашей игре - легко!\nДостаточно ответить на вопросы как можно быстрее, "
+                                                    "использовав при этом минимум подсказок!"
+                                                    "Если нужно повторить вопрос - просто поздоровайтесь с ботом")
+    update.effective_message.reply_text(help_text)
 
 
-def contact_handler(bot, update):
-    user = update.message.from_user
-    player = service.add_player(str(user.id), PLAYER_TYPE, user.username, update.message.chat_id, 'INIT', datetime.datetime.now())
-    player = service.set_player_state(player, 'CONTACT')
-    handle_reply(update.message, player, None)
-
-
-def help_handler(bot, update):
-    help_text = service.get_property(BOT_HELP_TEXT, """Победить в нашей игре - легко! 
-Достаточно ответить на вопросы как можно быстрее, использовав при этом минимум подсказок!)
-Список команд:
-/start - начать игру. Игру также начнет любое произвольное сообщение
-/jpoint_help - как распределились ответы на текущий вопрос. Доступна один раз
-/fiftyfifty - убрать половину неверных вариантов. Доступна один раз
-/top - покажет игровой рейтинг 
-/contacts - оставь нам контактную информацию для связи. Возможно, это учитывается в рейтинге;)
-""")
-    _reply_to_player(update.message, help_text)
-
-
-def error(bot, update, err):
+def error(_, update, err):
     logger.warning("Update '%s' caused error '%s'", update, err)
 
 
-def _reply_to_player(message, text, *args, **kwargs):
-    if not service.get_property(BOT_SKIP_REPLY, '') or kwargs.get('force_reply', False):
-        message.reply_text(text, *args, **kwargs)
-
-
-def _build_keyboard(variants):
-    options = [InlineKeyboardButton(variant.text_value, callback_data=json.dumps((variant.question_id, variant.variant_id)))
-               for variant in sorted(variants, key=lambda x: x.variant_id)]
-    return InlineKeyboardMarkup(_build_menu(options, n_cols=1))
+def _build_keyboard(question_id, key_text_variants, hints, columns=2):
+    options = [InlineKeyboardButton('{}: {}'.format(variant_key, key_text_variants[variant_key]),
+                                    callback_data=json.dumps(('answer', question_id, variant_key)))
+               for variant_key in sorted(key_text_variants)]
+    hints = [InlineKeyboardButton(hint['hint_title'], callback_data=json.dumps(('hint', hint['hint_key'], question_id)))
+             for hint in hints]
+    return InlineKeyboardMarkup(_build_menu(options, columns, footer_buttons=hints))
 
 
 def _build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
@@ -216,20 +210,22 @@ def _build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
     return menu
 
 
-def get_bot():
-    return updater.bot
-
-
-def main():
-    global updater
-    updater = Updater(os.environ['BOT_TOKEN'], workers=int(os.environ['WORKERS']))
+if __name__ == "__main__":
+    service.init()
+    request_kwargs = {
+        'proxy_url': os.environ['TG_PROXY_URL'], 'urllib3_proxy_kwargs': {}
+        # Optional, if you need authentication:
+        # 'urllib3_proxy_kwargs': {
+        #     'username': 'PROXY_USER',
+        #     'password': 'PROXY_PASS',
+        # }
+    }
+    updater = service.create_updater(os.environ['BOT_TOKEN'], os.environ['BOT_WORKERS'], request_kwargs)
     updater.dispatcher.add_handler(CommandHandler('help', help_handler))
     updater.dispatcher.add_handler(CommandHandler('start', start_handler))
-    updater.dispatcher.add_handler(CommandHandler('jpoint_help', public_help_handler))
-    updater.dispatcher.add_handler(CommandHandler('fiftyfifty', fifty_handler))
-    updater.dispatcher.add_handler(CommandHandler('top', top_handler))
-    updater.dispatcher.add_handler(CommandHandler('contacts', contact_handler))
-    updater.dispatcher.add_handler(CallbackQueryHandler(button_handler))
+    updater.dispatcher.add_handler(CommandHandler('place', place_handler))
+    updater.dispatcher.add_handler(CallbackQueryHandler(answer_button_handler, pattern='\["answer"'))
+    updater.dispatcher.add_handler(CallbackQueryHandler(hint_button_handler, pattern='\["hint"'))
     updater.dispatcher.add_handler(MessageHandler(Filters.all, start_handler))
     updater.dispatcher.add_error_handler(error)
 

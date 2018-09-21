@@ -1,5 +1,17 @@
 version: '2.0'
 services:
+  db:
+    image: postgres
+    volumes:
+    - ${DB_DATA_PATH}:/var/lib/postgresql/data
+    environment:
+    - TZ=Europe/Moscow
+    - POSTGRES_DB=${DB_NAME}
+    - POSTGRES_USER=${DB_USER}
+    - DB_PASS=${DB_PASS}
+    ports:
+    - ${DB_PORT}:5432
+    restart: always
   bot:
     build:
       context: .
@@ -9,26 +21,13 @@ services:
     environment:
       - TZ=Europe/Moscow
       - DB_HOST=db
-      - DB_PORT=3306
+      - DB_PORT=5432
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - BOT_TOKEN=${BOT_TOKEN}
-      - WORKERS=${WORKERS}
-    restart: always
-  db:
-    image: mysql
-    command: mysqld --character-set-server=utf8 --collation-server=utf8_unicode_ci --init-connect='SET NAMES UTF8;'
-    volumes:
-      - ${DB_DATA_PATH}:/var/lib/mysql
-    environment:
-      - TZ=Europe/Moscow
-      - MYSQL_DATABASE=${DB_NAME}
-      - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASS}
-      - MYSQL_ROOT_PASSWORD=${DB_PASS}
-    ports:
-      - 3306:3306
+      - TG_PROXY_URL=${TG_PROXY_URL}
+      - BOT_WORKERS=${BOT_WORKERS}
     restart: always
   console:
     build:
@@ -39,12 +38,15 @@ services:
     environment:
       - TZ=Europe/Moscow
       - DB_HOST=db
-      - DB_PORT=3306
+      - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - BOT_TOKEN=${BOT_TOKEN}
+      - TG_PROXY_URL=${TG_PROXY_URL}
       - CONSOLE_PORT=${CONSOLE_PORT}
+      - CONSOLE_USERNAME=${CONSOLE_USERNAME}
+      - CONSOLE_PASSWORD=${CONSOLE_PASSWORD}
     ports:
       - ${CONSOLE_PORT}:${CONSOLE_PORT}
     restart: always

@@ -1,10 +1,11 @@
 # coding=utf-8
 import os
-from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime, UniqueConstraint, and_, or_, desc
+from telegram.ext import Updater
+from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime, ForeignKeyConstraint, and_, or_
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.sql.functions import count, max, coalesce, sum
+from sqlalchemy.sql.functions import count, max, dense_rank, sum as sum_
 
 import loggers
 
@@ -13,7 +14,20 @@ logger = loggers.logging.getLogger(__name__)
 _Base = declarative_base()
 _Session = sessionmaker(expire_on_commit=False)
 
-MISTAKE_HINT_TITLE = 'MISTAKE'
+BOT_TOP_LIMIT = 'bot_top_limit'
+BOT_ANSWER_TRY_LIMIT = 'bot_answer_try_limit'
+BOT_HINT_TRY_LIMIT = 'bot_hint_try_limit'
+FIFTY_HINT_TITLE_TEXT = 'fifty_hint_title_text'
+PUBLIC_HELP_HINT_TITLE_TEXT = 'public_help_hint_title_text'
+
+FIFTY_HINT_KEY = 'fifty'
+PUBLIC_HELP_HINT_KEY = 'public_help'
+AVAILABLE_HINTS = [{'hint_key': FIFTY_HINT_KEY, 'title_key': FIFTY_HINT_TITLE_TEXT},
+                   {'hint_key': PUBLIC_HELP_HINT_KEY, 'title_key': PUBLIC_HELP_HINT_TITLE_TEXT}]
+
+
+def create_updater(token, workers, request_kwargs):
+    return Updater(token, request_kwargs=request_kwargs, workers=int(workers))
 
 
 def with_session():
@@ -30,268 +44,214 @@ def with_session():
                     sess.rollback()
                 logger.error('Error', exc_info=True)
                 raise e
+
         return wrapper
+
     return decorator
 
 
-@with_session()
-def add_player(session, player_id, player_type, player_name, chat_id, initial_state, registration_time):
-    """
-    adds new player
-    :param session: autoprovided via with_session
-    :param player_id:
-    :param player_name:
-    :param player_type:
-    :param chat_id:
-    :param initial_state:
-    :param registration_time:
-    :return: new or existing player
-    """
-    existing_player = session.query(Player).filter(Player.player_id == player_id).first()
-    if existing_player:
-        return existing_player
-
-    player = Player(player_id, player_type, player_name, chat_id, initial_state, registration_time)
-    session.add(player)
-    return player
-
-
-@with_session()
-def add_hint(session, player_id, question_id, hint_title):
-    return _add_hint(session, player_id, question_id, hint_title)
-
-
-@with_session()
-def get_hint_for_stage(session, player_id, stage, hint_title):
-    return _get_hint_for_stage(session, player_id, stage, hint_title)
+def _id_from(user):
+    return str(user.id)
 
 
 @with_session()
 def get_property(session, property_key, default_value):
+    return _get_property(session, property_key, default_value)
+
+
+def _get_property(session, property_key, default_value):
     prop = session.query(Property).filter(Property.property_key == property_key).first()
     return prop.property_value if prop else default_value
 
 
 @with_session()
-def get_current_ctx(session, player_id, stage):
-    answer = _get_last_answer(session, player_id, stage)
-    return session.query(Player).filter(Player.player_id == player_id).first(), _get_next_unanswered_question(session, stage, answer)
+def add_player(session, user, chat_id, registration_time):
+    return _add_player(session, user, user.name, chat_id, registration_time)
+
+
+def _add_player(session, user, name, chat_id, registration_time):
+    player_id = _id_from(user)
+    existing_player = _get_player_query(session, player_id).first()
+    if existing_player:
+        return existing_player
+    player = Player(player_id, name, chat_id, registration_time)
+    session.add(player)
+    return player
+
+
+def _get_player_query(session, player_id):
+    return session.query(Player).filter(Player.player_id == player_id)
 
 
 @with_session()
-def reset_data(session):
-    session.query(Answer).delete()
-    session.query(Hint).delete()
-    session.query(Player).delete()
+def get_overlimited_answer(session, user):
+    try_limit = _get_property(session, BOT_ANSWER_TRY_LIMIT, 2)
+    return session.query(Answer).filter(
+        and_(
+            Answer.player_id == _id_from(user),
+            or_(Answer.tries > try_limit , and_(Answer.tries == try_limit, Answer.passed == False))
+        )
+    ).first()
 
 
 @with_session()
-def release_losers(session, stage, callback):
-    losers = session.query(Player).filter(Player.state == 'LOSE').all()
-    for loser in losers:
-        session.begin_nested()
-        answer = _get_last_answer(session, loser.player_id, stage)
-        answer.tries = 1
-        loser.state = 'REPEAT'
-        session.commit()
-        callback(loser)
+def get_max_question_id(session):
+    return session.query(max(Question.question_id)).scalar()
 
 
 @with_session()
-def set_property(session, property_key, property_value):
-    property = Property(property_key, property_value)
-    session.add(property)
-    session.query(Player).update({Player.state: 'PLAY'})
-    session.commit()
-
-
-@with_session()
-def get_answer_stats(session, question_id):
-    total = session.query(count('*')).select_from(Answer).filter(Answer.question_id == question_id).scalar()
-    grouped_answers_query = session.query(Answer.variant_id, count('*').label('cnt')).group_by(Answer.variant_id)\
-        .filter(Answer.question_id == question_id).subquery()
-    grouped_answers = session.query(Variant.variant_id, coalesce(grouped_answers_query.c.cnt, 0))\
-        .outerjoin(grouped_answers_query, grouped_answers_query.c.variant_id == Variant.variant_id)\
-        .filter(Variant.question_id == question_id).all()
-    return grouped_answers, total
-
-
-@with_session()
-def get_player_place(session, stage, player_id):
-    rating_query = _get_rating(session, stage)
-    all_rating = rating_query.subquery()
-    player_score = rating_query.filter(Answer.player_id == player_id).first()
-    if not player_score:
-        return None, None
-    return player_score, session.query(count('*') + 1).select_from(all_rating)\
-        .filter(or_(all_rating.c.points > player_score[1],
-                    and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries < player_score[2]),
-                    and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries == player_score[2],
-                         all_rating.c.hint_count < player_score[3]),
-                    and_(all_rating.c.points == player_score[1], all_rating.c.sum_tries == player_score[2],
-                         all_rating.c.hint_count == player_score[3], all_rating.c.last_answer_time < player_score[4]))).scalar()
-
-
-@with_session()
-def get_top(session, stage, top_size=None):
-    question_amount = session.query(count(Question.question_id)).filter(Question.stage == stage).scalar()
-    entities = _get_rating(session, stage)
-    if top_size:
-        entities = entities.limit(top_size)
-    entities = entities.from_self().join(Player).with_entities(Player.player_name, 'points', 'sum_tries',
-                                                               coalesce(Column('hint_count'), 0), 'last_answer_time', Player.chat_id,
-                                                               Player.player_id) \
-        .order_by(desc('points'), 'sum_tries', 'hint_count', 'last_answer_time')
-    top = entities.all()
-    return top, question_amount
-
-
-@with_session()
-def get_answer(session, player_id, question_id):
-    return session.query(Answer).filter(and_(Answer.player_id == player_id, Answer.question_id == question_id)).first()
+def get_max_passed_question_id(session, user):
+    max_passed_question_for_user = session.query(max(Question.question_id)).join(Variant).join(Answer).filter(
+        and_(Answer.player_id == _id_from(user), Answer.passed == True)).scalar()
+    return max_passed_question_for_user if max_passed_question_for_user else 0
 
 
 @with_session()
 def get_question(session, question_id):
-    return session.query(Question).filter(Question.question_id == question_id).first()
+    return session.query(Question).filter(Question.question_id == question_id).one()
 
 
 @with_session()
-def process_answer(session, stage, player, variant_id, answer_time, try_limit):
-    answer = _get_last_answer(session, player.player_id, stage)
-    next_question = _get_next_unanswered_question(session, stage, answer)
-    if next_question:
-        answer = _add_answer(session, player, next_question.question_id, variant_id, answer_time)
-    state = _calculate_state(next_question, answer, try_limit)
-    session.flush()
-    return _set_user_state(session, player, state), _get_next_unanswered_question(session, stage, answer)
+def get_available_hints(session, user):
+    used_hint_keys = [hint_key for hint_key, in session.query(Hint.hint_key).filter(Hint.player_id == _id_from(user)).all()]
+    return [{'hint_key': hint['hint_key'], 'hint_title': _get_property(session, hint['title_key'], 'unknown')}
+            for hint in AVAILABLE_HINTS if hint['hint_key'] not in used_hint_keys]
 
 
 @with_session()
-def get_game_state(session, stage, player, try_limit):
-    answer = _get_last_answer(session, player.player_id, stage)
-    next_question = _get_next_unanswered_question(session, stage, answer)
-    return _calculate_state(next_question, answer, try_limit)
-
-
-@with_session()
-def set_player_state(session, player, state):
-    return _set_user_state(session, player, state)
-
-
-@with_session()
-def save_player_contacts(session, player, text, state=None):
-    player.contacts = text
-    if state:
-        player.state = state
-    session.merge(player)
-    return player
-
-
-@with_session()
-def get_players(sesion):
-    return sesion.query(Player).all()
-
-
-def _add_hint(session, player_id, question_id, hint_title):
+def add_answer(session, user, question_id, variant_id, answer_time):
     """
-    adds hint usage
-    :param session:
-    :param player_id:
-    :param question_id:
-    :param hint_title:
-    :return: True if already used, False - otherwise
+    :return: if question passed or if more tries available
     """
-    question_stage = session.query(Question.stage).filter(Question.question_id == question_id).scalar()
-    used_hint = _get_hint_for_stage(session, player_id, question_stage, hint_title)
-    if not used_hint:
-        new_hint = Hint(player_id, question_id, hint_title)
-        session.add(new_hint)
-        return False
-    return True
-
-
-def _get_hint_for_stage(session, player_id, stage, hint_title):
-    return session.query(Hint).join(Question).filter(and_(Hint.player_id == player_id, Hint.hint_title == hint_title,
-                                                     Question.stage == stage)).first()
-
-
-def _calculate_state(question, answer, try_limit):
-    if not question:
-        return 'WIN'
-    if not answer:
-        return 'INIT'
-    if answer.tries > try_limit:
-        return 'LOSE'
-    elif answer.tries == try_limit:
-        return 'PLAY' if answer.variant.correct else 'LOSE'
+    player_id = _id_from(user)
+    answer = session.query(Answer).join(Variant).filter(and_(Answer.player_id == player_id, Variant.question_id == question_id)).first()
+    if answer:
+        answer.answer_time = answer_time
     else:
-        return 'PLAY' if answer.variant.correct else 'REPEAT'
+        answer = Answer(player_id, question_id, variant_id, answer_time)
+        session.add(answer)
+
+    answer.tries += 1
+    try_limit = int(_get_property(session, BOT_ANSWER_TRY_LIMIT, 2))
+    answer.passed = _is_variant_correct(session, question_id, variant_id) and answer.tries <= try_limit
+    return answer.passed or try_limit > answer.tries
 
 
-def _add_answer(session, player, question_id, variant_id, answer_time):
-    existing_answer = session.query(Answer).filter(and_(Answer.player_id == player.player_id, Answer.question_id == question_id)).first()
-    if existing_answer:
-        _add_hint(session, player.player_id, question_id, MISTAKE_HINT_TITLE)
-        session.begin_nested()
-        existing_answer.tries += 1
-        existing_answer.variant_id = variant_id
-        existing_answer.answer_time = answer_time
-        session.commit()
-        session.refresh(existing_answer)
-        return existing_answer
-
-    answer = Answer(player.player_id, question_id, variant_id, answer_time, 1)
-    session.begin_nested()
-    session.add(answer)
-    session.commit()
-    return answer
+def _is_variant_correct(session, question_id, variant_id):
+    return session.query(Variant.correct).filter(Variant.question_id == question_id, Variant.variant_id == variant_id).scalar()
 
 
-def _get_last_answer(session, player_id, stage):
-    return session.query(Answer).join(Question).filter(and_(Answer.player_id == player_id, Question.stage == stage)) \
-        .order_by(desc(Question.weight)).first()
+@with_session()
+def add_hint(session, user, hint_key, question_id):
+    player_id = _id_from(user)
+    hint = session.query(Hint).filter(and_(Hint.player_id == player_id, Hint.hint_key == hint_key)).first()
+    if hint:
+        hint.tries += 1
+        hint.question_id = question_id
+    else:
+        hint = Hint(player_id, question_id, hint_key, 1)
+        session.add(hint)
+
+    hint_try_limit = int(_get_property(session, BOT_HINT_TRY_LIMIT, 1))
+    return hint.tries <= hint_try_limit
 
 
-def _get_next_unanswered_question(session, stage, answer=None):
-    if not answer:
-        return session.query(Question).filter(Question.stage == stage).order_by(Question.weight).first()
-    if not answer.variant.correct:
-        return answer.question
-    return session.query(Question).filter(and_(Question.stage == stage, Question.weight > answer.question.weight)) \
-        .order_by(Question.weight).first()
+@with_session()
+def get_answer_stats(session, question_id):
+    answers_distribution = session.query(Answer.variant_id, count('*').label('cnt')).select_from(Answer).join(Variant).join(Question).filter(
+        Question.question_id == question_id).group_by(Answer.variant_id).all()
+    return answers_distribution, sum([row[1] for row in answers_distribution])
 
 
-def _set_user_state(session, player, state):
-    player.state = state
-    session.merge(player)
-    return player
+@with_session()
+def get_user_place(session, user):
+    position_field, rating_query = _build_rating_query(session)
+    return rating_query.from_self(position_field).filter(Player.player_id == _id_from(user)).scalar()
 
 
-def _get_rating(session, stage):
-    hint_usage_query = session.query(Hint.player_id, count(Hint.question_id).label('hint_count')).join(Question)\
-        .filter(Question.stage == stage).group_by(Hint.player_id).subquery()
-    return session.query(Answer.player_id,
-                         count(Answer.variant_id).label('points'),
-                         max(Answer.answer_time).label('last_answer_time'),
-                         sum(Answer.tries).label('sum_tries')) \
-        .join(Answer.question).join(Answer.variant) \
-        .filter(and_(Variant.correct == True, Question.stage == stage)) \
-        .group_by(Answer.player_id) \
-        .from_self()\
-        .outerjoin(hint_usage_query, hint_usage_query.c.player_id == Answer.player_id)\
-        .with_entities(Answer.player_id, 'points', 'sum_tries', coalesce(Column('hint_count'), 0).label('hint_count'),
-                       'last_answer_time') \
-        .order_by(desc('points'), 'sum_tries', 'hint_count', 'last_answer_time')
+def _build_rating_query(session):
+    passed_answers_query = session.query(Answer.player_id,
+                                         count('*').label('points'),
+                                         sum_(Answer.tries).label('tries'),
+                                         max(Answer.answer_time).label('last_answer_time')).filter(Answer.passed == True) \
+        .group_by(Answer.player_id).subquery()
+    hint_count_query = session.query(Hint.player_id, count('*').label('hint_count')).group_by(Hint.player_id).subquery()
+
+    position_field = dense_rank().over(order_by=[passed_answers_query.c.points.desc().nullslast(),
+                                                 passed_answers_query.c.tries.nullslast(),
+                                                 hint_count_query.c.hint_count.nullsfirst(),
+                                                 passed_answers_query.c.last_answer_time.nullslast()]).label('position')
+
+    return position_field, session.query(position_field,
+                                         Player,
+                                         passed_answers_query.c.points,
+                                         passed_answers_query.c.tries,
+                                         hint_count_query.c.hint_count,
+                                         passed_answers_query.c.last_answer_time) \
+        .select_from(Player) \
+        .outerjoin(passed_answers_query, Player.player_id == passed_answers_query.c.player_id) \
+        .outerjoin(hint_count_query, Player.player_id == hint_count_query.c.player_id).order_by(position_field)
+
+
+@with_session()
+def get_top(session, limited=True):
+    position_field, rating_query = _build_rating_query(session)
+    if limited:
+        top_size = _get_property(session, BOT_TOP_LIMIT, 10)
+        rating_query = rating_query.limit(top_size)
+    return rating_query.all()
+
+
+@with_session()
+def get_properties(session):
+    return session.query(Property).order_by(Property.property_key)
+
+
+@with_session()
+def save_properties(session, properties):
+    props = session.query(Property).filter(Property.property_key.in_(properties.keys())).all()
+    for prop in props:
+        prop.property_value = properties[prop.property_key]
+
+
+@with_session()
+def clear_data(session, player_ids):
+    session.query(Answer).filter(Answer.player_id.in_(player_ids)).delete(synchronize_session=False)
+    session.query(Hint).filter(Hint.player_id.in_(player_ids)).delete(synchronize_session=False)
+
+
+@with_session()
+def get_player(session, player_id):
+    return _get_player_query(session, player_id).one()
+
+
+@with_session()
+def rename_player(session, player_id, player_name):
+    player = session.query(Player).filter(Player.player_id == player_id).one()
+    player.player_name = player_name
+
+
+class Player(_Base):
+    __tablename__ = 'player'
+    player_id = Column(String(100), primary_key=True, nullable=False)
+
+    player_name = Column(String(100))
+    chat_id = Column(Integer)
+
+    registration_time = Column(DateTime, nullable=False)
+
+    def __init__(self, player_id, player_name, chat_id, registration_time):
+        self.player_id = player_id
+        self.player_name = player_name
+        self.chat_id = chat_id
+        self.registration_time = registration_time
 
 
 class Question(_Base):
     __tablename__ = 'question'
     question_id = Column(Integer, primary_key=True, nullable=False)
 
-    stage = Column(Integer, nullable=False)
     text_value = Column(String(1000), nullable=False)
-    weight = Column(Integer, nullable=False)
 
     # relations inited later
     variants = None
@@ -299,72 +259,53 @@ class Question(_Base):
 
 class Variant(_Base):
     __tablename__ = 'variant'
-    question_id = Column(Integer, ForeignKey(Question.question_id), primary_key=True, nullable=False)
     variant_id = Column(String(1), primary_key=True, nullable=False)
+    question_id = Column(Integer, ForeignKey(Question.question_id), primary_key=True, nullable=False)
 
     text_value = Column(String(1000), nullable=False)
     correct = Column(Boolean, nullable=False)
-
-    __table_args__ = (UniqueConstraint(variant_id, question_id, correct, name='stupid_index_to_allow_foreign_key_to_variant_id'),)
-
-
-class Player(_Base):
-    __tablename__ = 'player'
-    player_id = Column(String(100), primary_key=True, nullable=False)
-    player_type = Column(String(3), primary_key=True, nullable=False)
-
-    player_name = Column(String(100))
-    chat_id = Column(Integer)
-    state = Column(String(20), nullable=False)
-
-    registration_time = Column(DateTime, nullable=False)
-    contacts = Column(String(300))
-
-    def __init__(self, player_id, player_type, player_name, chat_id, state, registration_time):
-        self.player_id = player_id
-        self.player_type = player_type
-        self.player_name = player_name
-        self.chat_id = chat_id
-        self.state = state
-        self.registration_time = registration_time
 
 
 class Answer(_Base):
     __tablename__ = 'answer'
     player_id = Column(String(100), ForeignKey(Player.player_id), primary_key=True, nullable=False)
-    question_id = Column(Integer, ForeignKey(Question.question_id), primary_key=True, nullable=False)
+    question_id = Column(Integer, primary_key=True, nullable=False)
+    variant_id = Column(String(1), primary_key=True, nullable=False)
 
-    variant_id = Column(String(1), ForeignKey(Variant.variant_id), nullable=False)
     tries = Column(Integer, nullable=False)
+    passed = Column(Boolean)
     answer_time = Column(DateTime, nullable=False)
 
-    def __init__(self, player_id, question_id, variant_id, answer_time, tries):
+    def __init__(self, player_id, question_id, variant_id, answer_time):
         self.player_id = player_id
         self.question_id = question_id
         self.variant_id = variant_id
         self.answer_time = answer_time
-        self.tries = tries
+        self.tries = 0
+
+    __table_args__ = (ForeignKeyConstraint((question_id, variant_id), [Variant.question_id, Variant.variant_id]),)
 
     # relations inited later
-    question = None
-    variant = None
+    # variant = None
 
 
 class Hint(_Base):
     __tablename__ = 'hint'
     player_id = Column(String(100), ForeignKey(Player.player_id), primary_key=True, nullable=False)
     question_id = Column(Integer, ForeignKey(Question.question_id), primary_key=True, nullable=False)
-    hint_title = Column(String(10), primary_key=True, nullable=False)
+    hint_key = Column(String(50), primary_key=True, nullable=False)
+    tries = Column(Integer, nullable=False)
 
-    def __init__(self, player_id, question_id, hint_title):
+    def __init__(self, player_id, question_id, hint_key, tries):
         self.player_id = player_id
         self.question_id = question_id
-        self.hint_title = hint_title
+        self.hint_key = hint_key
+        self.tries = tries
 
 
 class Property(_Base):
     __tablename__ = 'property'
-    property_key = Column(String(20), primary_key=True, nullable=False)
+    property_key = Column(String(50), primary_key=True, nullable=False)
 
     property_value = Column(String(1000))
 
@@ -376,35 +317,15 @@ class Property(_Base):
 def init():
     # relations
     Question.variants = relationship(Variant, order_by=Variant.variant_id, lazy='joined')
-    Answer.question = relationship(Question, uselist=False, lazy='joined')
-    Answer.variant = relationship(Variant, uselist=False, lazy='joined', primaryjoin=and_(Answer.question_id == Variant.question_id,
-                                                                                          Answer.variant_id == Variant.variant_id))
+    # Answer.variant = relationship(Variant, uselist=False, lazy='dynamic', primaryjoin=and_(Answer.question_id == Variant.question_id,
+    #                                                                                        Answer.variant_id == Variant.variant_id))
 
-    engine = create_engine('mysql+pymysql://{user}:{passwd}@{host}:{port}/{db}?charset=utf8'.format(**_build_parameters()),
+    engine = create_engine('postgresql+psycopg2://{user}:{passwd}@{host}:{port}/{db}'.format(**_build_parameters()),
                            isolation_level='READ_COMMITTED',
                            encoding='utf8',
                            echo=True)
     _Session.configure(bind=engine)
     _Base.metadata.create_all(engine)
-
-
-def wait_for_db():
-    _wait_for_db(int(os.environ.get('WAIT_FOR_DB_TRIES', 1)), int(os.environ.get('WAIT_FOR_DB_PAUSE_S', 0)))
-
-
-def _wait_for_db(try_n, sleep_seconds):
-    import pymysql
-    import time
-    try:
-        pymysql.connect(**_build_parameters())
-        print('DB is available')
-    except Exception as e:
-        if try_n == 1:
-            print('DB is effectively unavailable, raising exception')
-            raise e
-        print('DB is not available yet, waiting')
-        time.sleep(sleep_seconds)
-        _wait_for_db(try_n - 1, sleep_seconds)
 
 
 def _build_parameters():

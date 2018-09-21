@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Properties</title>
+</head>
+<body>
+    <div>
+        <a href="/admin">Main admin page</a>
+    </div>
+    <form method="POST">
+        {% for property in properties %}
+            <div>
+                <span>
+                    <input type="text" name="property_key" value="{{ property.property_key }}"/>
+                </span>
+                <span>
+                    <input type="text" name="property_value" value="{{ property.property_value }}"/>
+                </span>
+            </div>
+        {% endfor %}
+        <input type="submit" value="Update properties">
+    </form>
+</body>
+</html>

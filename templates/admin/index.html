@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin page</title>
+</head>
+<body>
+    <div>
+        <a href="/rating/quiz-results.html">Rating page</a>
+    </div>
+    <div>
+        <a href="/admin/properties">Edit properties</a>
+    </div>
+    <div>
+        <a href="/admin/message">Send message</a>
+    </div>
+    <div>
+        <a href="/admin/clear">Clear data</a>
+    </div>
+    <table cellpadding="5">
+        <tr>
+            <th>Place</th>
+            <th>Name</th>
+            <th>Score</th>
+            <th>Tries</th>
+            <th>Hints</th>
+            <th>Latest answer time</th>
+            <th>Tools</th>
+        </tr>
+        {% for player in top %}
+            <tr>
+                <td>{{ player[0] }}</td>
+                <td>{{ player[1].player_name }}</td>
+                <td>{{ player[2] }} pts</td>
+                <td>{{ player[3] }} tries</td>
+                <td>{{ player[4] }} hints</td>
+                <td>{{ player[5] }}</td>
+                <td><a href="/admin/rename?player_id={{ player[1].player_id }}">change name</a></td>
+            </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

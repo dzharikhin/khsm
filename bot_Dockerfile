@@ -1,4 +1,4 @@
-FROM python:3.4-alpine
+FROM python:3.6-stretch
 ADD . /
 RUN pip install -r requirements.txt
-CMD ["python", "app.py"]
+CMD ["python", "khsm_bot.py"]

@@ -1,103 +1,133 @@
-# coding=utf-8
+import json
 import os
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs
-
-from telegram import Bot
+from flask import Flask, render_template, request
+from flask import send_from_directory
+from flask_basicauth import BasicAuth
+from flask import Response
+from flask import redirect, url_for
 
 import loggers
 import service
-from khsm_bot import BOT_STAGE
 
 logger = loggers.logging.getLogger(__name__)
 
+app = Flask(__name__)
+app.config['BASIC_AUTH_USERNAME'] = os.environ['CONSOLE_USERNAME']
+app.config['BASIC_AUTH_PASSWORD'] = os.environ['CONSOLE_PASSWORD']
+basic_auth = BasicAuth(app)
 
-class Handler(BaseHTTPRequestHandler):
 
-    def _write(self, text, status=200):
-        self.send_response(status)
-        self.send_header('Content-type', 'text/html')
-        self.end_headers()
-        self.wfile.write(text.encode('utf-8'))
+@app.route('/admin', methods=['GET'])
+@basic_auth.required
+def get_admin_page():
+    top = service.get_top(False)
+    return render_template('admin/index.html', top=top)
 
-    def do_GET(self):
-        req_path = self.path[1:]
-        dot_path = os.path.abspath(os.path.dirname(__file__))
-        if not req_path:
-            self._handle_index(dot_path)
-        else:
-            path_params = req_path.split('/')
-            path = os.path.join(dot_path, 'templates/{}.html'.format(path_params[0]))
-            if os.path.exists(path):
-                with open(path, 'r') as f:
-                    template = f.read()
-                    self._write(template.format(','.join(path_params[1:])))
-            else:
-                self._write('ERROR', status=404)
 
-    def do_POST(self):
-        req_path = self.path[1:]
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length).decode('utf-8')
-        params = parse_qs(post_data)
-        if req_path.startswith('message'):
-            self._handle_message(params)
-        elif req_path.startswith('release'):
-            self._handle_release(params)
-        elif req_path.startswith('stage'):
-            self._handle_stage(params)
-        else:
-            self._write('ERROR', status=404)
+@app.route('/admin/message', methods=['GET'])
+@basic_auth.required
+def get_message_page():
+    failed_chat_ids = request.args.get('failed_chat_ids', None)
+    top = service.get_top(False)
+    return render_template('admin/message.html', top=top, failed_chat_ids=failed_chat_ids)
 
-    def _handle_index(self, dot_path):
-        path = os.path.join(dot_path, 'templates/index.html')
-        current_stage = service.get_property(BOT_STAGE, '1')
-        top, question_amount = service.get_top(current_stage)
-        header = '<tr><th>Place</th><th>Name</th><th>Points</th><th>Sum tries</th><th>Hint count</th><th>Latest answer</th><th>Chat</th></tr>\n'
-        row_template = '<tr>' \
-                       '<td>{place}</td>' \
-                       '<td>{name}</td>' \
-                       '<td>{points}</td>' \
-                       '<td>{sum_tries}</td>' \
-                       '<td>{hint_count}</td>' \
-                       '<td>{latest_answer}</td>' \
-                       '<td><a href="message/{chat_id}">Send message</a></td>' \
-                       '</tr>'
-        table = '\n'.join([row_template.format(place=i + 1, name=player[0], points=player[1], sum_tries=player[2], hint_count=player[3],
-                                               latest_answer=player[4], chat_id=player[5]) for i, player in enumerate(top)])
-        with open(path, 'r') as index_template:
-            template = index_template.read()
-            self._write(template.format(table=header + table))
 
-    def _handle_message(self, params):
-        if 'chat_ids' not in params:
-            chat_ids = [player.chat_id for player in service.get_players()]
-        else:
-            chat_ids = '\n'.join(params.get('chat_ids', [])).split(',')
-        msg = '\n'.join(params.get('msg', []))
-        for chat_id in chat_ids:
-            try:
-                bot.send_message(chat_id=chat_id, text=msg)
-            except Exception:
-                logger.error('Error sending message', exc_info=True)
-        self._write('OK')
+@app.route('/admin/message', methods=['POST'])
+@basic_auth.required
+def post_message_page():
+    # if request.form['username'] != os.environ['CONSOLE_USERNAME'] or request.form['password'] != os.environ['CONSOLE_PASSWORD']:
+    #     error = 'Invalid Credentials. Please try again.'
+    chat_ids = request.form.getlist('chat_id')
+    message = request.form['message']
+    failed_chat_ids = []
+    for chat_id in chat_ids:
+        try:
+            bot.send_message(chat_id, message)
+        except Exception as ex:
+            failed_chat_ids.append(chat_id)
+            logger.warning('Error sending to chat_id={}, ex={}'.format(chat_id, type(ex).__name__))
+    return redirect(url_for('get_message_page', failed_chat_ids=",".join(failed_chat_ids)))
 
-    def _handle_release(self, params):
-        current_stage = service.get_property(BOT_STAGE, '1')
-        msg = '\n'.join(params.get('msg', []))
-        service.release_losers(current_stage, lambda player: bot.send_message(chat_id=player.chat_id, text=msg))
-        self._write('OK')
 
-    def _handle_stage(self, params):
-        stage = '\n'.join(params.get('stage', []))
-        service.set_property(BOT_STAGE, stage)
-        self._write('OK')
+@app.route('/admin/properties', methods=['GET'])
+@basic_auth.required
+def get_properties_page():
+    properties = service.get_properties()
+    return render_template('admin/properties.html', properties=properties)
+
+
+@app.route('/admin/properties', methods=['POST'])
+@basic_auth.required
+def post_properties_page():
+    # if request.form['username'] != os.environ['CONSOLE_USERNAME'] or request.form['password'] != os.environ['CONSOLE_PASSWORD']:
+    #     error = 'Invalid Credentials. Please try again.'
+    properties = {k: v for k, v in zip(request.form.getlist('property_key'), request.form.getlist('property_value'))}
+    service.save_properties(properties)
+    return redirect(url_for('get_properties_page'))
+
+
+@app.route('/admin/clear', methods=['GET'])
+@basic_auth.required
+def get_clear_data_page():
+    top = service.get_top(False)
+    return render_template('admin/clear-data.html', top=top)
+
+
+@app.route('/admin/clear', methods=['POST'])
+@basic_auth.required
+def post_clear_data_page():
+    player_ids = request.form.getlist('player_id')
+    service.clear_data(player_ids)
+    return redirect(url_for('get_clear_data_page'))
+
+
+@app.route('/admin/rename', methods=['GET'])
+@basic_auth.required
+def get_rename_page():
+    player = service.get_player(request.args['player_id'])
+    return render_template('admin/rename.html', player=player)
+
+
+@app.route('/admin/rename', methods=['POST'])
+@basic_auth.required
+def post_rename_page():
+    player_id = request.form['player_id']
+    name = request.form['player_name']
+    service.rename_player(player_id, name)
+    return redirect(url_for('get_admin_page'))
+
+
+@app.route('/rating/<path:path>', methods=['GET'])
+def get_rating_page(path):
+    return send_from_directory('templates/rating', path)
+
+
+@app.route('/rating/data.js', methods=['GET'])
+def get_rating_json():
+    top = service.get_top()
+    rating_data = json.dumps([{
+        'place': player[0],
+        'name': player[1].player_name,
+        'points': player[2] if player[2] else 0,
+        'sum_tries': player[3] if player[3] else 0,
+        'hint_count': player[4] if player[4] else 0,
+        'latest_answer': player[5].strftime('%Y-%m-%d %H:%M:%S') if player[5] else '',
+        'chat_id': player[1].chat_id
+    } for player in top])
+    return Response('window.QUIZ_RESULTS = {}'.format(rating_data), mimetype='application/js')
 
 
 if __name__ == "__main__":
+    request_kwargs = {
+        'proxy_url': os.environ['TG_PROXY_URL'], 'urllib3_proxy_kwargs': {}
+        # Optional, if you need authentication:
+        # 'urllib3_proxy_kwargs': {
+        #     'username': 'PROXY_USER',
+        #     'password': 'PROXY_PASS',
+        # }
+    }
     service.init()
+    updater = service.create_updater(os.environ['BOT_TOKEN'], 2, request_kwargs)
     global bot
-    bot = Bot(os.environ['BOT_TOKEN'])
-    server_address = ('', int(os.environ['CONSOLE_PORT']))
-    httpd = HTTPServer(server_address, Handler)
-    httpd.serve_forever()
+    bot = updater.bot
+    app.run(host='0.0.0.0', port=int(os.environ['CONSOLE_PORT']))
