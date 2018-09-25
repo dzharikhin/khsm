@@ -5,7 +5,7 @@ import os
 import random
 
 import json
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, Filters
 
 import loggers
@@ -108,17 +108,17 @@ def _handle_retry(update):
 def _send_next_question(update, user, current_question_id):
     question = service.get_question(current_question_id + 1)
     keyboard = _build_keyboard(question.question_id, {v.variant_id: v.text_value for v in question.variants}, service.get_available_hints(user))
-    update.effective_message.reply_text(question.text_value, reply_markup=keyboard)
+    _reply(update, question.text_value, reply_markup=keyboard)
 
 
 def _handle_win(update):
     win_text = service.get_property(BOT_WIN_TEXT, "Вы успешно ответили на все вопросы")
-    update.effective_message.reply_text(win_text)
+    _reply(update, win_text)
 
 
 def _handle_lose(update):
     lose_text = service.get_property(BOT_LOSE_TEXT, "К сожалению, вы проиграли. Заходите к нам на стенд за кофе")
-    update.effective_message.reply_text(lose_text)
+    _reply(update, lose_text)
 
 
 def _handle_public_help(update, user, question_id):
@@ -136,7 +136,7 @@ def _handle_public_help(update, user, question_id):
 
 
 def _calculate_distribution(target_answers_count, total_answers_count):
-    return target_answers_count / float(total_answers_count) * 100 if total_answers_count else 0
+    return "{0:.2f}".format(target_answers_count / float(total_answers_count) * 100 if total_answers_count else 0)
 
 
 def _handle_fifty(update, user, question_id):
@@ -159,7 +159,7 @@ def _handle_fifty(update, user, question_id):
 
 def _show_notification_if_possible(update, text):
     if update.callback_query:
-        update.callback_query.answer(text=text)
+        update.callback_query.answer(text='\n'.join(text.split('<br>')), parse_mode=ParseMode.HTML)
         return True
     return False
 
@@ -176,16 +176,20 @@ def place_handler(_, update):
     place = service.get_user_place(user)
     if place:
         place_text = service.get_property(BOT_PLACE_TEXT, 'Сейчас Вы на {}м месте').format(place)
-        update.effective_message.reply_text(place_text)
+        _reply(update, place_text)
     else:
         start_handler(_, update)
 
 
 def help_handler(_, update):
-    help_text = service.get_property(BOT_HELP_TEXT, "Победить в нашей игре - легко!\nДостаточно ответить на вопросы как можно быстрее, "
-                                                    "использовав при этом минимум подсказок!"
+    help_text = service.get_property(BOT_HELP_TEXT, "Победить в нашей игре - легко!<br>Достаточно ответить на вопросы как можно быстрее, "
+                                                    "использовав при этом минимум подсказок<br>"
                                                     "Если нужно повторить вопрос - просто поздоровайтесь с ботом")
-    update.effective_message.reply_text(help_text)
+    _reply(update, help_text)
+
+
+def _reply(update, text, reply_markup=None):
+    update.effective_message.reply_text('\n'.join(text.split('<br>')), parse_mode=ParseMode.HTML, reply_markup=reply_markup)
 
 
 def error(_, update, err):

@@ -85,13 +85,8 @@ def _get_player_query(session, player_id):
 
 @with_session()
 def get_overlimited_answer(session, user):
-    try_limit = _get_property(session, BOT_ANSWER_TRY_LIMIT, 2)
-    return session.query(Answer).filter(
-        and_(
-            Answer.player_id == _id_from(user),
-            or_(Answer.tries > try_limit , and_(Answer.tries == try_limit, Answer.passed == False))
-        )
-    ).first()
+    try_limit = int(_get_property(session, BOT_ANSWER_TRY_LIMIT, 2))
+    return _tries_minus_answers(session, _id_from(user)) > try_limit
 
 
 @with_session()
@@ -132,9 +127,18 @@ def add_answer(session, user, question_id, variant_id, answer_time):
         session.add(answer)
 
     answer.tries += 1
+    session.add(answer)
+    # tries incremented but not committed yet
     try_limit = int(_get_property(session, BOT_ANSWER_TRY_LIMIT, 2))
-    answer.passed = _is_variant_correct(session, question_id, variant_id) and answer.tries <= try_limit
-    return answer.passed or try_limit > answer.tries
+    if not _is_variant_correct(session, question_id, variant_id):
+        return _tries_minus_answers(session, player_id) < try_limit - 1
+
+    answer.passed = answer.tries <= try_limit
+    return answer.passed
+
+
+def _tries_minus_answers(session, player_id):
+    return session.query(sum_(Answer.tries) - count(Answer.answer_time)).filter(Answer.player_id == player_id).scalar()
 
 
 def _is_variant_correct(session, question_id, variant_id):
