@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edit questions</title>
+</head>
+<body>
+    <div>
+        <a href="/admin">Main admin page</a>
+    </div>
+    <form method="POST">
+        {% for question in questions %}
+            <div>
+                <div>
+                    <label>Question {{ question.question_id }}<textarea name="question_{{ question.question_id }}">{{ question.text_value }}</textarea></label>
+                </div>
+                <div>
+                    {% for variant in question.variants %}
+                        <span>
+                            <label>
+                                {{ variant.variant_id }} {% if variant.correct %}(*){% endif %}
+                                <input type="text" name="variant_{{ variant.variant_id }}_q_{{ question.question_id }}" value="{{ variant.text_value }}"/></label>
+                        </span>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endfor %}
+        <input type="submit" value="Edit questions">
+    </form>
+</body>
+</html>

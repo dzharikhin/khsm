@@ -235,6 +235,23 @@ def rename_player(session, player_id, player_name):
     player.player_name = player_name
 
 
+@with_session()
+def get_questions(session):
+    return session.query(Question).order_by(Question.question_id).all()
+
+
+@with_session()
+def update_questions(session, update):
+    for question in update:
+        question_id = question['question_id']
+        db_question = session.query(Question).filter(Question.question_id == question_id).one()
+        db_question.text_value = question['text_value']
+        for variant in question['variants']:
+            variant_id = variant['variant_id']
+            db_variant = session.query(Variant).filter(and_(Variant.question_id == question_id, Variant.variant_id == variant_id)).one()
+            db_variant.text_value = variant['text_value']
+
+
 class Player(_Base):
     __tablename__ = 'player'
     player_id = Column(String(100), primary_key=True, nullable=False)

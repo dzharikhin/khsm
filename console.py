@@ -97,6 +97,38 @@ def post_rename_page():
     return redirect(url_for('get_admin_page'))
 
 
+@app.route('/admin/questions', methods=['GET'])
+@basic_auth.required
+def get_questions_page():
+    questions = service.get_questions()
+    return render_template('admin/questions.html', questions=questions)
+
+
+@app.route('/admin/questions', methods=['POST'])
+@basic_auth.required
+def post_questions_page():
+    question_mark = 'question_'
+    question_mark_len = len(question_mark)
+
+    answer_mark = 'variant_'
+    answer_mark_len = len(answer_mark)
+
+    update_dict = {}
+    for param_key, param_value in request.form.items():
+        if param_key.startswith(question_mark):
+            question_id = param_key[question_mark_len:]
+            entry = update_dict.get(question_id, {'question_id': question_id, 'variants': []})
+            entry['text_value'] = param_value
+            update_dict[question_id] = entry
+        else:
+            variant_id_q_id_list = param_key[answer_mark_len:].split('_q_')
+            question_entry = update_dict.get(variant_id_q_id_list[1], {'question_id': variant_id_q_id_list[1], 'variants':[]})
+            question_entry['variants'].append({'variant_id': variant_id_q_id_list[0], 'text_value': param_value})
+            update_dict[variant_id_q_id_list[1]] = question_entry
+    service.update_questions(update_dict.values())
+    return redirect(url_for('get_questions_page'))
+
+
 @app.route('/rating/<path:path>', methods=['GET'])
 def get_rating_page(path):
     return send_from_directory('templates/rating', path)
