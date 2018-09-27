@@ -29,14 +29,14 @@ def start_handler(_, update):
     user = update.effective_user
     player = service.add_player(user, update.effective_message.chat_id, datetime.datetime.now())
     logger.info('Player id={} wrote {}'.format(player.player_id, update.effective_message.text))
-    failed_answer = service.get_overlimited_answer(user)
-    _handle_message(user, update, failed_answer)
+    overdraft = service.is_overdrafted(user)
+    _handle_message(user, update, overdraft)
 
 
 def answer_button_handler(_, callback_update):
     user = callback_update.effective_user
-    failed_answer = service.get_overlimited_answer(user)
-    if failed_answer:
+    overdraft = service.is_overdrafted(user)
+    if overdraft:
         _release_inline_button(callback_update)
         return
 
@@ -52,8 +52,8 @@ def answer_button_handler(_, callback_update):
 
 def hint_button_handler(_, callback_update):
     user = callback_update.effective_user
-    failed_answer = service.get_overlimited_answer(user)
-    if failed_answer:
+    overdraft = service.is_overdrafted(user)
+    if overdraft:
         _release_inline_button(callback_update)
         return
 
@@ -81,7 +81,7 @@ def hint_button_handler(_, callback_update):
 
 def _handle_message(user, update, fail, current_question_id=0):
     if fail:
-        _handle_lose(update)
+        _handle_lose(update, user)
         _release_inline_button(update)
         return
 
@@ -116,8 +116,11 @@ def _handle_win(update):
     _reply(update, win_text)
 
 
-def _handle_lose(update):
-    lose_text = service.get_property(BOT_LOSE_TEXT, "К сожалению, вы проиграли. Заходите к нам на стенд за кофе")
+def _handle_lose(update, user):
+    lose_text = service.get_property(BOT_LOSE_TEXT, "Вы смогли ответить на {question_id} вопросов из {question_count}").format(
+        question_id=service.get_max_passed_question_id(user),
+        question_count=service.get_question_count()
+    )
     _reply(update, lose_text)
 
 

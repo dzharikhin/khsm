@@ -5,7 +5,7 @@ from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, DateTime, F
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.sql.functions import count, max, dense_rank, sum as sum_
+from sqlalchemy.sql.functions import count, max, dense_rank, sum as sum_, coalesce
 
 import loggers
 
@@ -84,9 +84,15 @@ def _get_player_query(session, player_id):
 
 
 @with_session()
-def get_overlimited_answer(session, user):
+def is_overdrafted(session, user):
+    player_id = _id_from(user)
     try_limit = int(_get_property(session, BOT_ANSWER_TRY_LIMIT, 2))
-    return _tries_minus_answers(session, _id_from(user)) > try_limit
+    overdraft = _get_tries_overdraft(session, player_id)
+    return overdraft >= (try_limit if _is_last_answer_passed(session, player_id) else try_limit - 1)
+
+
+def _is_last_answer_passed(session, player_id):
+    return session.query(Answer.passed).filter(Answer.player_id == player_id).order_by(Answer.question_id.desc()).limit(1).scalar()
 
 
 @with_session()
@@ -120,6 +126,7 @@ def add_answer(session, user, question_id, variant_id, answer_time):
     """
     player_id = _id_from(user)
     answer = session.query(Answer).join(Variant).filter(and_(Answer.player_id == player_id, Variant.question_id == question_id)).first()
+    try_limit = int(_get_property(session, BOT_ANSWER_TRY_LIMIT, 2))
     if answer:
         answer.answer_time = answer_time
     else:
@@ -127,18 +134,15 @@ def add_answer(session, user, question_id, variant_id, answer_time):
         session.add(answer)
 
     answer.tries += 1
-    session.add(answer)
-    # tries incremented but not committed yet
-    try_limit = int(_get_property(session, BOT_ANSWER_TRY_LIMIT, 2))
-    if not _is_variant_correct(session, question_id, variant_id):
-        return _tries_minus_answers(session, player_id) < try_limit - 1
-
-    answer.passed = answer.tries <= try_limit
-    return answer.passed
+    overdraft = _get_tries_overdraft(session, player_id)
+    answer.passed = _is_variant_correct(session, question_id, variant_id) and overdraft < try_limit
+    # exists one more try
+    return answer.passed or overdraft < try_limit - 1
 
 
-def _tries_minus_answers(session, player_id):
-    return session.query(sum_(Answer.tries) - count(Answer.answer_time)).filter(Answer.player_id == player_id).scalar()
+def _get_tries_overdraft(session, player_id):
+    tries, answers = session.query(coalesce(sum_(Answer.tries), 0), count(Answer.answer_time)).filter(Answer.player_id == player_id).first()
+    return tries - answers
 
 
 def _is_variant_correct(session, question_id, variant_id):
@@ -238,6 +242,11 @@ def rename_player(session, player_id, player_name):
 @with_session()
 def get_questions(session):
     return session.query(Question).order_by(Question.question_id).all()
+
+
+@with_session()
+def get_question_count(session):
+    return session.query(count(Question.question_id)).scalar()
 
 
 @with_session()
