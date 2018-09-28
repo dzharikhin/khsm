@@ -92,7 +92,7 @@ def _handle_message(user, update, fail, current_question_id=0):
 
     max_question_id = service.get_max_question_id()
     if max_user_answered_question_id == max_question_id:
-        _handle_win(update)
+        _handle_win(update, user)
         _release_inline_button(update)
         return
 
@@ -111,13 +111,14 @@ def _send_next_question(update, user, current_question_id):
     _reply(update, question.text_value, reply_markup=keyboard)
 
 
-def _handle_win(update):
-    win_text = service.get_property(BOT_WIN_TEXT, "Вы успешно ответили на все вопросы")
+def _handle_win(update, user):
+    win_text = service.get_property(BOT_WIN_TEXT, "Вы успешно ответили на все вопросы").format(player_place=service.get_user_place(user))
     _reply(update, win_text)
 
 
 def _handle_lose(update, user):
-    lose_text = service.get_property(BOT_LOSE_TEXT, "Игра закончена. Поздравляем! Из {questions_count} вопросов вы смогли правильно ответить на {question_id}").format(
+    lose_text = service.get_property(BOT_LOSE_TEXT, "Игра закончена. Поздравляем! "
+                                                    "Из {questions_count} вопросов вы смогли правильно ответить на {question_id}").format(
         questions_count=service.get_question_count(),
         question_id=service.get_max_passed_question_id(user)
     )
@@ -178,7 +179,7 @@ def place_handler(_, update):
     service.add_player(user, update.effective_message.chat_id, datetime.datetime.now())
     place = service.get_user_place(user)
     if place:
-        place_text = service.get_property(BOT_PLACE_TEXT, 'Сейчас Вы на {}м месте').format(place)
+        place_text = service.get_property(BOT_PLACE_TEXT, 'Сейчас Вы на {player_place}м месте').format(player_place=place)
         _reply(update, place_text)
     else:
         start_handler(_, update)
