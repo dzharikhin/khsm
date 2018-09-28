@@ -117,9 +117,9 @@ def _handle_win(update):
 
 
 def _handle_lose(update, user):
-    lose_text = service.get_property(BOT_LOSE_TEXT, "Игра закончена.<br>Всего вопросов: {questions_count}<br>Правильных ответов на них: {question_id}").format(
-        questions_count=service.get_question_count(),
-        question_id=service.get_max_passed_question_id(user)
+    lose_text = service.get_property(BOT_LOSE_TEXT, "Вы смогли ответить на {question_id} вопросов из {question_count}").format(
+        question_id=service.get_max_passed_question_id(user),
+        question_count=service.get_question_count()
     )
     _reply(update, lose_text)
 
@@ -150,7 +150,7 @@ def _handle_fifty(update, user, question_id):
     question = service.get_question(question_id)
     variants_to_leave = len(question.variants) - int(len(question.variants) / 2)
     if variants_to_leave <= 1:
-        text = service.get_property(BOT_FIFTY_FOR_TWO_TEXT, 'Orly ^O,o^')
+        text = service.get_property(BOT_FIFTY_FOR_TWO_TEXT, 'Серьезно?)')
         return _show_notification_if_possible(text, update)
 
     rest = [variant for variant in question.variants if variant.correct]
