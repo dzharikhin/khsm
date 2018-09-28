@@ -6,9 +6,8 @@ INSERT INTO property(property_key, property_value) VALUES
     ('public_help_hint_title_text', 'Joker help'),
     ('bot_retry_text', 'Вы ошиблись, но есть еще попытка'),
     ('bot_win_text', 'Вы победили'),
-    ('bot_lose_text', 'Вы смогли ответить на {question_id} вопросов из {question_count}<br>Ваша игра окончена'),
+    ('bot_lose_text', 'Игра закончена.<br>Всего вопросов: {questions_count}<br>Правильных ответов на них: {question_id}'),
     ('bot_place_text', 'Сейчас вы на {}м месте'),
-    ('bot_help_text', 'Выиграть очень просто!<br>Один вариант ответа, 2 подсказки, 1 право на ошибку<br>Для повтора вопроса просто поздоровайтесь с
-     ботом'),
+    ('bot_help_text', 'Выиграть очень просто!<br>Один вариант ответа, 2 подсказки, 1 право на ошибку<br>Для повтора вопроса просто поздоровайтесь с ботом'),
     ('bot_hint_unavailable_text', 'Подсказка уже потрачена'),
-    ('bot_fifty_for_two_text', 'Серьезно??)');
+    ('bot_fifty_for_two_text', 'Orly ^O,o^');
