@@ -227,7 +227,7 @@ if __name__ == "__main__":
         #     'username': 'PROXY_USER',
         #     'password': 'PROXY_PASS',
         # }
-    }
+    } if os.environ['TG_PROXY_URL'] else {}
     updater = service.create_updater(os.environ['BOT_TOKEN'], os.environ['BOT_WORKERS'], request_kwargs)
     updater.dispatcher.add_handler(CommandHandler('help', help_handler))
     updater.dispatcher.add_handler(CommandHandler('start', start_handler))

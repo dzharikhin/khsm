@@ -157,7 +157,7 @@ if __name__ == "__main__":
         #     'username': 'PROXY_USER',
         #     'password': 'PROXY_PASS',
         # }
-    }
+    } if os.environ['TG_PROXY_URL'] else {}
     service.init()
     updater = service.create_updater(os.environ['BOT_TOKEN'], 2, request_kwargs)
     global bot
